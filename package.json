@@ -1,0 +1,70 @@
+{
+  "name": "clawguard",
+  "version": "0.1.0",
+  "description": "In-process governance plugin for OpenClaw: per-window budget enforcement, policy-driven model downgrade, and DLP/audit for outbound LLM calls.",
+  "type": "module",
+  "license": "MIT OR Apache-2.0",
+  "keywords": [
+    "openclaw",
+    "openclaw-plugin",
+    "llm",
+    "governance",
+    "budget",
+    "dlp",
+    "cost-control"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "clawguard": "./dist/bin/clawguard.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/blasrodri/clawguard.git"
+  },
+  "homepage": "https://github.com/blasrodri/clawguard#readme",
+  "bugs": {
+    "url": "https://github.com/blasrodri/clawguard/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "files": [
+    "dist",
+    "openclaw.plugin.json",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE-MIT",
+    "LICENSE-APACHE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "openclaw": {
+    "extensions": [
+      "./src/index.ts"
+    ],
+    "compat": {
+      "minGatewayVersion": "2026.3.24-beta.2"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepublishOnly": "npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.4"
+  }
+}

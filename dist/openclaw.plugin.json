@@ -1,0 +1,146 @@
+{
+  "$schema": "https://openclaw.ai/schemas/plugin.json",
+  "id": "clawguard",
+  "name": "clawguard",
+  "version": "0.1.0",
+  "description": "Budget enforcement, model downgrade, and DLP/audit for OpenClaw LLM calls.",
+  "main": "./index.js",
+  "engines": {
+    "openclaw": ">=1.0.0"
+  },
+  "hooks": [
+    "before_model_resolve",
+    "before_agent_run",
+    "llm_output",
+    "model_call_ended",
+    "message_sending"
+  ],
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "mode": {
+        "type": "string",
+        "enum": ["enforce", "shadow"],
+        "default": "enforce",
+        "description": "enforce blocks/rewrites for real; shadow only records what it would do."
+      },
+      "budget": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "windowMs": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 60000,
+            "description": "Rolling budget window length in milliseconds."
+          },
+          "maxTokens": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Token ceiling per window. Omit for unlimited."
+          },
+          "maxUsd": {
+            "type": "number",
+            "minimum": 0,
+            "description": "USD cost ceiling per window. Omit for unlimited."
+          },
+          "softLimitRatio": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "default": 0.9,
+            "description": "Fraction of a ceiling at which to start delaying."
+          },
+          "delayMs": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 250,
+            "description": "Back-pressure delay applied in the soft-limit band."
+          }
+        }
+      },
+      "downgrade": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "to": {
+            "type": "string",
+            "enum": ["sonnet", "haiku", "gpt-4o", "gpt-3.5-turbo"],
+            "description": "Downgrade target tier. Costlier models are rewritten to this."
+          },
+          "whenBudgetRatioAbove": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "default": 0,
+            "description": "Only downgrade once budget usage reaches this fraction. 0 = always."
+          }
+        }
+      },
+      "killSwitch": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "default": false,
+            "description": "Halt all calls (requires a restart to toggle)."
+          },
+          "file": {
+            "type": "string",
+            "description": "Halt all calls while this file exists (toggle at runtime, no restart)."
+          }
+        }
+      },
+      "breaker": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "enabled": { "type": "boolean", "default": false },
+          "threshold": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 5,
+            "description": "Open the circuit after this many consecutive provider failures."
+          },
+          "cooldownMs": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 30000,
+            "description": "How long the circuit stays open before a trial call is allowed."
+          }
+        }
+      },
+      "dlp": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "enabled": { "type": "boolean", "default": true },
+          "onDetect": {
+            "type": "string",
+            "enum": ["log", "block"],
+            "default": "log",
+            "description": "log records detections; block cancels the outbound message."
+          },
+          "scanResponses": {
+            "type": "boolean",
+            "default": true,
+            "description": "Also scan model output, not just outbound messages."
+          }
+        }
+      },
+      "audit": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "enabled": { "type": "boolean", "default": true },
+          "path": {
+            "type": "string",
+            "description": "JSONL audit log path. Defaults to ~/.clawguard/audit.jsonl."
+          }
+        }
+      }
+    }
+  }
+}
