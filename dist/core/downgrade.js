@@ -16,6 +16,12 @@ const REPLACEMENT_MODEL = {
     "gpt-4o": "gpt-4o",
     "gpt-3.5-turbo": "gpt-3.5-turbo",
 };
+const TIER_PROVIDER = {
+    sonnet: "anthropic",
+    haiku: "anthropic",
+    "gpt-4o": "openai",
+    "gpt-3.5-turbo": "openai",
+};
 /** Parse a `--downgrade-to`-style string. Case-insensitive, accepts aliases. */
 export function parseTier(raw) {
     switch (raw.toLowerCase().trim()) {
@@ -51,6 +57,10 @@ const NO_DOWNGRADE = {
  */
 export function evaluate(provider, model, target) {
     if (!model) {
+        return NO_DOWNGRADE;
+    }
+    // Don't substitute an Anthropic model into an OpenAI call or vice versa.
+    if (TIER_PROVIDER[target] !== provider) {
         return NO_DOWNGRADE;
     }
     const detectedRate = rateFor(provider, model).inputPerMillionUsd;

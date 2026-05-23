@@ -15,6 +15,7 @@ import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
 import { normalizeConfig, type ClawGuardConfig } from "./config.js";
 import { Governor, type Logger } from "./core/governor.js";
 import { guarded } from "./core/guard.js";
+import { SessionWatcher } from "./core/session-watcher.js";
 import {
   HOOKS,
   readCallOk,
@@ -50,6 +51,7 @@ export default definePluginEntry({
     // Usage accounting + response DLP.
     api.on(HOOKS.llmOutput, (ctx) =>
       guard("llm_output", undefined, () => {
+        llmOutputFired = true; // anthropic runtime — disable session watcher
         governor.onUsage(readUsageCtx(ctx));
         return undefined;
       }),
@@ -72,7 +74,20 @@ export default definePluginEntry({
     );
 
     // Don't lose buffered audit lines if the gateway shuts down cleanly.
-    api.on("gateway_stop", () => guard("gateway_stop", undefined, () => { governor.flush(); return undefined; }));
+    api.on("gateway_stop", () => guard("gateway_stop", undefined, () => { governor.flush(); watcher.stop(); return undefined; }));
+
+    // Session watcher: tails Claude Code JSONL files for token usage when
+    // the claude-cli runtime is in use (llm_output hook doesn't fire then).
+    // Disabled automatically if llm_output fires — that means the anthropic
+    // runtime is in use and we'd otherwise double-count every call.
+    let llmOutputFired = false;
+    const watcher = new SessionWatcher({
+      onUsage: (u) => {
+        if (!llmOutputFired) governor.onUsage(u);
+      },
+      onError: (err) => logger.warn(`clawguard: session-watcher error — ${String(err)}`),
+    });
+    watcher.start();
 
     logger.info(
       `clawguard active — mode=${config.mode} fail=${config.failMode}` +
