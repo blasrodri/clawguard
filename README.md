@@ -19,9 +19,15 @@ An [OpenClaw](https://openclaw.ai) plugin that puts a governance layer in front 
 git clone https://github.com/blasrodri/clawguard
 cd clawguard
 npm install && npm run build
+node dist/bin/clawguard.js setup
 ```
 
-Point OpenClaw at the `dist/` directory in `~/.openclaw/openclaw.json`:
+`setup` does three things automatically:
+- Grants the OpenClaw device the `operator.write` scope it needs (avoids the manual-approval catch-22)
+- Registers the Meridian plugin if [Meridian](https://github.com/rynfar/meridian) is installed
+- Restarts the gateway so changes take effect
+
+Then add clawguard to `~/.openclaw/openclaw.json`:
 
 ```json
 {
@@ -44,6 +50,22 @@ Point OpenClaw at the `dist/` directory in `~/.openclaw/openclaw.json`:
 ```
 
 Restart OpenClaw. You should see `clawguard active — …` in the gateway log.
+
+## Hook coverage by runtime
+
+OpenClaw supports two agent runtimes. Which hooks fire depends on which one is in use:
+
+| Feature | `anthropic` runtime | `claude-cli` runtime |
+|---|---|---|
+| Budget gate | ✅ | ✅ |
+| Token accounting | ✅ via `llm_output` | ✅ via session watcher¹ |
+| DLP scan (outbound) | ✅ | ✅ |
+| Circuit breaker | ✅ | ✅ |
+| Model downgrade | ✅ | ❌ hook never fires |
+
+¹ **Session watcher**: when `claude-cli` is the runtime, clawguard tails `~/.claude/projects/<workspace>/*.jsonl` for token usage. This introduces a one-turn lag (usage from turn N is accounted at turn N+1). Budgets based on hourly windows are unaffected; sub-minute rate limiting is not supported in this mode.
+
+For full hook coverage including model downgrade, install [Meridian](https://github.com/rynfar/meridian) as a proxy layer and run `clawguard setup` — it will register the Meridian plugin automatically.
 
 ## Configuration
 
@@ -99,6 +121,25 @@ Restart OpenClaw. You should see `clawguard active — …` in the gateway log.
 **`killSwitch.file`** — Drop a file at this path to halt all calls immediately, no restart needed. Delete the file to resume.
 
 **`budget.reserveTokens` / `budget.reserveUsd`** — Pre-charge an estimate per in-flight call so concurrent calls can't all slip through a budget check simultaneously. Leave at `0` for purely reactive accounting.
+
+## Testing DLP
+
+Send a message to your agent containing a recognisable secret pattern. With `onDetect: "block"` the message is cancelled before it reaches the model — you'll get no response and an audit entry:
+
+```
+# Telegram / any channel — send one of these:
+my key is sk-ant-api03-xxxxxxxx...
+charge this: 4111 1111 1111 1111
+contact me at user@example.com
+```
+
+Then verify the audit log:
+
+```bash
+cat ~/.clawguard/audit.jsonl | grep dlp | tail -5
+```
+
+You should see a `dlp_block` (or `dlp_redact`) entry with the matched category. With `onDetect: "redact"` the message goes through with the secret replaced by `[REDACTED]`.
 
 ## Report
 

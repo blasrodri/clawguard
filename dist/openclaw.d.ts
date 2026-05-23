@@ -54,6 +54,7 @@ export interface UsageCtx {
 }
 export declare function readUsageCtx(ctx: unknown): UsageCtx;
 export declare function readMessageText(ctx: unknown): string | undefined;
+export declare function readPromptText(ctx: unknown): string | undefined;
 /**
  * Did a model call succeed? Read from `model_call_ended`. Defensive: an
  * explicit error, a failure-shaped outcome string, or an HTTP status >= 400

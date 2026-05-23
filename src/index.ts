@@ -21,6 +21,7 @@ import {
   readCallOk,
   readMessageText,
   readModelCtx,
+  readPromptText,
   readUsageCtx,
 } from "./openclaw.js";
 
@@ -40,11 +41,15 @@ export default definePluginEntry({
       }),
     );
 
-    // Budget gate: refuse a new turn once the window's budget is spent.
-    api.on(HOOKS.beforeAgentRun, () =>
+    // Budget gate + inbound DLP: refuse a new turn once the window's budget is
+    // spent, or if the user's message contains a secret/PII and onDetect=block.
+    api.on(HOOKS.beforeAgentRun, (ctx) =>
       guard("before_agent_run", config.failMode === "closed" ? { outcome: "block", reason: "clawguard fail-closed" } : undefined, () => {
         const gate = governor.onRunGate();
-        return gate.block ? { outcome: "block", reason: gate.reason } : { outcome: "pass" };
+        if (gate.block) return { outcome: "block", reason: gate.reason };
+        const { cancel, labels } = governor.onMessageSending(readPromptText(ctx), "inbound");
+        if (cancel) return { outcome: "block", reason: `DLP: inbound message blocked (${labels.join(", ")})` };
+        return { outcome: "pass" };
       }),
     );
 
@@ -68,7 +73,7 @@ export default definePluginEntry({
     // Outbound DLP: scan content and optionally cancel the send.
     api.on(HOOKS.messageSending, (ctx) =>
       guard("message_sending", undefined, () => {
-        const { cancel } = governor.onMessageSending(readMessageText(ctx));
+        const { cancel } = governor.onMessageSending(readMessageText(ctx), "outbound");
         return cancel ? { cancel: true } : undefined;
       }),
     );

@@ -82,6 +82,10 @@ export function readMessageText(ctx) {
     const obj = asRecord(ctx);
     return firstString(obj, ["text", "content", "body", "message"]);
 }
+export function readPromptText(ctx) {
+    const obj = asRecord(ctx);
+    return firstString(obj, ["prompt", "text", "content", "body", "message"]);
+}
 /**
  * Did a model call succeed? Read from `model_call_ended`. Defensive: an
  * explicit error, a failure-shaped outcome string, or an HTTP status >= 400

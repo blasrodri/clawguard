@@ -94,8 +94,8 @@ export declare class Governor {
     private breakerActive;
     /** `llm_output`: reconcile usage, attribute savings, scan the response. */
     onUsage(input: UsageInput): void;
-    /** `message_sending`: scan outbound content; optionally cancel the send. */
-    onMessageSending(text: string | undefined): MessageScanOutcome;
+    /** Scan content for DLP hits; optionally cancel the message. */
+    onMessageSending(text: string | undefined, direction?: "inbound" | "outbound"): MessageScanOutcome;
     /** Flush any buffered audit records (call on shutdown). */
     flush(): void;
     /** Point-in-time view for status reporting. */

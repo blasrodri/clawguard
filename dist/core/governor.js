@@ -179,8 +179,8 @@ export class Governor {
             }
         }
     }
-    /** `message_sending`: scan outbound content; optionally cancel the send. */
-    onMessageSending(text) {
+    /** Scan content for DLP hits; optionally cancel the message. */
+    onMessageSending(text, direction = "outbound") {
         if (!this.config.dlp.enabled || !text) {
             return { cancel: false, labels: [] };
         }
@@ -189,9 +189,9 @@ export class Governor {
             return { cancel: false, labels: [] };
         }
         const enforceBlock = this.config.dlp.onDetect === "block" && this.config.mode === "enforce";
-        this.audit.record(enforceBlock ? "dlp_blocked" : "dlp_detected", { labels });
+        this.audit.record(enforceBlock ? "dlp_blocked" : "dlp_detected", { labels, direction });
         if (enforceBlock) {
-            this.logger.warn(`clawguard: cancelled outbound message — DLP hit ${labels.join(",")}`);
+            this.logger.warn(`clawguard: blocked ${direction} message — DLP hit ${labels.join(",")}`);
         }
         return { cancel: enforceBlock, labels };
     }
