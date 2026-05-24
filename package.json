@@ -1,5 +1,5 @@
 {
-  "name": "clawguard",
+  "name": "claw-sentinel",
   "version": "0.1.0",
   "description": "In-process governance plugin for OpenClaw: per-window budget enforcement, policy-driven model downgrade, and DLP/audit for outbound LLM calls.",
   "type": "module",
