@@ -1,0 +1,13 @@
+{
+  "id": "clawguard",
+  "name": "clawguard",
+  "version": "0.1.0",
+  "description": "Budget enforcement, model downgrade, and DLP/audit for OpenClaw LLM calls.",
+  "entry": "./dist/index.js",
+  "hooks": {
+    "allowConversationAccess": true
+  },
+  "compat": {
+    "minGatewayVersion": "2026.3.24-beta.2"
+  }
+}

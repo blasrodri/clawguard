@@ -15,17 +15,38 @@ An [OpenClaw](https://openclaw.ai) plugin that puts a governance layer in front 
 
 ## Installation
 
+### Via OpenClaw plugin manager (recommended)
+
 ```bash
-git clone https://github.com/blasrodri/clawguard
-cd clawguard
-npm install && npm run build
-node dist/bin/clawguard.js setup
+# from npm (once published)
+openclaw plugins install clawguard
+
+# from a local checkout
+openclaw plugins install --link /path/to/clawguard
+
+# from the GitHub repo directly
+openclaw plugins install github:blasrodri/clawguard
+```
+
+Then run the one-shot setup:
+
+```bash
+clawguard setup
 ```
 
 `setup` does three things automatically:
 - Grants the OpenClaw device the `operator.write` scope it needs (avoids the manual-approval catch-22)
 - Registers the Meridian plugin if [Meridian](https://github.com/rynfar/meridian) is installed
 - Restarts the gateway so changes take effect
+
+### Manual installation
+
+```bash
+git clone https://github.com/blasrodri/clawguard
+cd clawguard
+npm install && npm run build
+node dist/bin/clawguard.js setup
+```
 
 Then add clawguard to `~/.openclaw/openclaw.json`:
 
@@ -35,10 +56,12 @@ Then add clawguard to `~/.openclaw/openclaw.json`:
     "entries": {
       "clawguard": {
         "enabled": true,
+        "hooks": { "allowConversationAccess": true },
         "config": {
           "mode": "enforce",
           "budget": { "windowMs": 3600000, "maxUsd": 5 },
-          "downgrade": { "to": "haiku" }
+          "downgrade": { "to": "haiku" },
+          "dlp": { "enabled": true, "onDetect": "block" }
         }
       }
     },
@@ -48,6 +71,8 @@ Then add clawguard to `~/.openclaw/openclaw.json`:
   }
 }
 ```
+
+`allowConversationAccess` is required for inbound DLP — without it OpenClaw strips `ctx.prompt` from the `before_agent_run` context for non-bundled plugins.
 
 Restart OpenClaw. You should see `clawguard active — …` in the gateway log.
 

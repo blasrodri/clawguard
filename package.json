@@ -53,7 +53,7 @@
   },
   "openclaw": {
     "extensions": [
-      "./src/index.ts"
+      "./dist/index.js"
     ],
     "compat": {
       "minGatewayVersion": "2026.3.24-beta.2"
