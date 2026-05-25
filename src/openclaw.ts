@@ -41,8 +41,8 @@ const DEFAULT_PROVIDER = "anthropic";
 export interface PluginApi {
   /** Register a handler for a named lifecycle hook. */
   on(hook: string, handler: HookHandler): void;
-  /** Plugin-scoped config object from `openclaw.json`. */
-  readonly config?: unknown;
+  /** Plugin-scoped config object from `openclaw.json` (OpenClaw calls this `pluginConfig`). */
+  readonly pluginConfig?: unknown;
   /** Gateway logger, if exposed. */
   readonly logger?: {
     info?(msg: string): void;

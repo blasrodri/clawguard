@@ -18,7 +18,7 @@ import { HOOKS, readCallOk, readMessageText, readModelCtx, readPromptEstimate, r
 export default definePluginEntry({
     id: "clawguard",
     register(api) {
-        const config = normalizeConfig(api.config);
+        const config = normalizeConfig(api.pluginConfig);
         const logger = makeLogger(api);
         const governor = new Governor(config, { logger });
         const guard = makeGuard(config, logger);

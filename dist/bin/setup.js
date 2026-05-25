@@ -27,7 +27,6 @@ export function runSetup(opts) {
     const tag = opts.dryRun ? " (dry-run)" : "";
     process.stdout.write(`clawguard setup${tag}\n\n`);
     process.stdout.write(`  Device scopes   ${result.deviceFixed ? "✓ fixed — granted operator.write + operator.pairing" : "— " + result.deviceDetail}\n`);
-    process.stdout.write(`  Meridian plugin ${result.meridianFixed ? "✓ registered" : "— " + result.meridianDetail}\n`);
     process.stdout.write(`  Hook coverage   ${result.hookCoverageNote}\n`);
     if (result.restartNeeded && !opts.dryRun) {
         process.stdout.write(`\nRestarting gateway to apply changes…\n`);
@@ -38,7 +37,7 @@ export function runSetup(opts) {
             process.stdout.write("  (restart failed — run: openclaw gateway restart)\n");
         }
     }
-    else if (!result.deviceFixed && !result.meridianFixed) {
+    else if (!result.deviceFixed) {
         process.stdout.write("\nNothing to fix.\n");
     }
     return 0;
@@ -47,8 +46,6 @@ function setup(dryRun) {
     const result = {
         deviceFixed: false,
         deviceDetail: "already has operator.write",
-        meridianFixed: false,
-        meridianDetail: "not installed or already registered",
         restartNeeded: false,
         hookCoverageNote: "",
     };
@@ -103,58 +100,10 @@ function setup(dryRun) {
     else {
         result.deviceDetail = "paired.json not found — is OpenClaw installed?";
     }
-    // --- Meridian plugin registration ---
-    const meridianResult = registerMeridianPlugin(dryRun);
-    result.meridianFixed = meridianResult.fixed;
-    result.meridianDetail = meridianResult.detail;
-    if (meridianResult.fixed)
-        result.restartNeeded = true;
-    // --- Hook coverage note ---
-    result.hookCoverageNote = hookCoverageNote(meridianResult.installed);
+    result.hookCoverageNote = hookCoverageNote();
     return result;
 }
-function registerMeridianPlugin(dryRun) {
-    // Find the clawguard meridian plugin dist file relative to this binary.
-    // __filename resolves to the compiled .js in dist/bin/, so go up two levels.
-    const pluginPath = join(homedir(), ".config", "meridian");
-    const pluginsJsonPath = join(pluginPath, "plugins.json");
-    // Resolve the meridian.js dist path — same dir as this binary's parent.
-    const selfDir = new URL(".", import.meta.url).pathname;
-    const meridianDist = join(selfDir, "..", "meridian.js");
-    if (!existsSync(meridianDist)) {
-        return { fixed: false, detail: "dist/meridian.js not found — run npm run build first", installed: false };
-    }
-    // Check if Meridian config dir exists (i.e. Meridian is installed).
-    if (!existsSync(pluginPath)) {
-        return { fixed: false, detail: "Meridian not installed (~/.config/meridian not found)", installed: false };
-    }
-    // Read or create plugins.json.
-    let pluginsConfig = { plugins: [] };
-    if (existsSync(pluginsJsonPath)) {
-        try {
-            pluginsConfig = JSON.parse(readFileSync(pluginsJsonPath, "utf8"));
-            if (!Array.isArray(pluginsConfig.plugins))
-                pluginsConfig.plugins = [];
-        }
-        catch {
-            pluginsConfig = { plugins: [] };
-        }
-    }
-    // Already registered?
-    const already = pluginsConfig.plugins.some((p) => p.path === meridianDist);
-    if (already) {
-        return { fixed: false, detail: "already registered in plugins.json", installed: true };
-    }
-    if (!dryRun) {
-        pluginsConfig.plugins.push({ path: meridianDist, enabled: true });
-        writeFileSync(pluginsJsonPath, JSON.stringify(pluginsConfig, null, 2) + "\n");
-    }
-    return { fixed: true, detail: `registered ${meridianDist}`, installed: true };
-}
-function hookCoverageNote(meridianInstalled) {
-    if (meridianInstalled) {
-        return "full via Meridian — all hooks fire (budget, downgrade, DLP, token accounting)";
-    }
+function hookCoverageNote() {
     const configPath = join(homedir(), ".openclaw", "openclaw.json");
     if (!existsSync(configPath))
         return "openclaw.json not found";
@@ -176,6 +125,6 @@ function hookCoverageNote(meridianInstalled) {
     if (hasAnthropicKey) {
         return "full via OpenClaw anthropic runtime — all hooks fire";
     }
-    return "partial — claude-cli runtime bypasses hooks. Install Meridian for full coverage: https://github.com/rynfar/meridian";
+    return "partial — claude-cli runtime bypasses hooks; budget/DLP still work via before_agent_run";
 }
 //# sourceMappingURL=setup.js.map

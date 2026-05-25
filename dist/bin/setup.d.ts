@@ -17,8 +17,6 @@
 export interface SetupResult {
     deviceFixed: boolean;
     deviceDetail: string;
-    meridianFixed: boolean;
-    meridianDetail: string;
     restartNeeded: boolean;
     hookCoverageNote: string;
 }
