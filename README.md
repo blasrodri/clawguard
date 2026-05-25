@@ -1,98 +1,182 @@
-# clawguard
+# ClawGuard
 
-An [OpenClaw](https://openclaw.ai) plugin that puts a governance layer in front of every LLM call: budget enforcement, automatic model downgrade, DLP scanning, circuit breaking, and an append-only audit log.
+**Stop surprise LLM bills. Block secrets before they leave your machine.**
 
-## What it does
+ClawGuard is an [OpenClaw](https://openclaw.ai) plugin that puts a governance layer in front of every LLM call — enforcing budgets, auto-downgrading expensive models, and scanning messages for API keys, PII, and secrets before they reach the model.
 
-| Feature | How it works |
-|---|---|
-| **Budget enforcement** | Tracks token and USD spend in a fixed window. Delays calls when spend approaches the soft limit; blocks when the ceiling is hit. |
-| **Model downgrade** | Rewrites expensive model requests (Opus, GPT-4) to a cheaper tier before the call goes out. Can be budget-aware — keep the premium model until X% of the budget is spent, then switch. |
-| **DLP scanning** | Scans outbound messages and model responses for PII and secrets (email, phone, credit card, SSN, API keys, bearer tokens). Can log or block. |
-| **Circuit breaker** | Opens after N consecutive provider failures; blocks calls during the cooldown window to avoid hammering a degraded provider. |
-| **Kill switch** | Halts all calls immediately — either via a config flag (needs restart) or a file on disk (toggle at runtime, no restart). |
-| **Audit log** | Append-only JSONL at `~/.clawguard/audit.jsonl`. Every decision is recorded; no raw prompt/response content, only labels, models, and counts. |
-
-## Installation
-
-### Via OpenClaw plugin manager (recommended)
-
-```bash
-# from npm (once published)
-openclaw plugins install clawguard
-
-# from a local checkout
-openclaw plugins install --link /path/to/clawguard
-
-# from the GitHub repo directly
-openclaw plugins install github:blasrodri/clawguard
+```
+clawguard active — mode=enforce downgrade=haiku maxUsd=5/win dlp=block
 ```
 
-Then run the one-shot setup:
+---
+
+## Why ClawGuard
+
+- You're paying $40/month in Claude API costs and have no idea where it's going
+- A script or agent accidentally sends an API key or SSN to the model
+- You want Opus for important work but Haiku for routine tasks — automatically
+- You need an audit trail of every LLM decision for compliance
+
+---
+
+## Quickstart
+
+Install via ClawHub:
 
 ```bash
-clawguard setup
+openclaw plugins install clawhub:@blasrodri/claw-sentinel
+openclaw gateway restart
 ```
 
-`setup` does three things automatically:
-- Grants the OpenClaw device the `operator.write` scope it needs (avoids the manual-approval catch-22)
-- Registers the Meridian plugin if [Meridian](https://github.com/rynfar/meridian) is installed
-- Restarts the gateway so changes take effect
-
-### Manual installation
-
-```bash
-git clone https://github.com/blasrodri/clawguard
-cd clawguard
-npm install && npm run build
-node dist/bin/clawguard.js setup
-```
-
-Then add clawguard to `~/.openclaw/openclaw.json`:
+Add to `~/.openclaw/openclaw.json`:
 
 ```json
 {
   "plugins": {
     "entries": {
-      "clawguard": {
+      "claw-sentinel": {
         "enabled": true,
         "hooks": { "allowConversationAccess": true },
-        "config": {
+        "pluginConfig": {
           "mode": "enforce",
           "budget": { "windowMs": 3600000, "maxUsd": 5 },
           "downgrade": { "to": "haiku" },
           "dlp": { "enabled": true, "onDetect": "block" }
         }
       }
-    },
-    "load": {
-      "paths": ["/path/to/clawguard/dist"]
     }
   }
 }
 ```
 
-`allowConversationAccess` is required for inbound DLP — without it OpenClaw strips `ctx.prompt` from the `before_agent_run` context for non-bundled plugins.
+Restart the gateway. You'll see the startup line above in your logs — you're live.
 
-Restart OpenClaw. You should see `clawguard active — …` in the gateway log.
+---
 
-## Hook coverage by runtime
+## Features
 
-OpenClaw supports two agent runtimes. Which hooks fire depends on which one is in use:
+### Budget enforcement
+Track token and USD spend in a rolling window. Calls are delayed when approaching the soft limit and blocked when the ceiling is hit. Budget state persists across restarts.
+
+```json
+"budget": {
+  "windowMs": 3600000,
+  "maxUsd": 5.00,
+  "softLimitRatio": 0.9
+}
+```
+
+### Automatic model downgrade
+Rewrite expensive model requests to a cheaper tier before the call goes out. Optionally hold the premium model until a budget threshold is crossed.
+
+```json
+"downgrade": {
+  "to": "haiku",
+  "whenBudgetRatioAbove": 0.8
+}
+```
+
+> Keep Opus until 80% of your budget is spent, then switch to Haiku automatically.
+
+### DLP scanning
+Detect and block API keys, bearer tokens, credit cards, SSNs, email addresses, and phone numbers — in both inbound messages and model responses. Add custom regex patterns with per-pattern actions.
+
+```json
+"dlp": {
+  "enabled": true,
+  "onDetect": "block",
+  "builtins": "all",
+  "customPatterns": [
+    { "name": "internal-id", "regex": "EMP-\\d{6}", "action": "block" }
+  ]
+}
+```
+
+### Circuit breaker
+Open the circuit after N consecutive provider failures. Blocks calls during the cooldown window to avoid hammering a degraded API endpoint.
+
+### Kill switch
+Halt all LLM calls instantly — via config flag (restart needed) or a file on disk (no restart, toggle at runtime).
+
+```bash
+touch /tmp/clawguard-halt    # stop all calls
+rm /tmp/clawguard-halt       # resume
+```
+
+### Audit log
+Append-only JSONL at `~/.clawguard/audit.jsonl`. Every budget decision, DLP hit, downgrade, and breaker event is recorded. No raw prompt/response content — only labels, models, and counts.
+
+---
+
+## Verify it's working
+
+Send a message with a fake API key from any channel (Telegram, CLI, etc.):
+
+```
+my key is sk-ant-api03-xxxxxxxx...
+```
+
+With `onDetect: "block"` the message is cancelled before reaching the model. Check the audit log:
+
+```bash
+grep dlp ~/.clawguard/audit.jsonl | tail -3
+# {"type":"dlp_blocked","labels":["api_key"],"direction":"inbound"}
+```
+
+---
+
+## Budget report
+
+```bash
+claw-sentinel report
+claw-sentinel report --since 7d
+claw-sentinel report --cap-usd 5 --json
+```
+
+```
+# ClawGuard report
+_generated 2026-05-23T20:33:40Z · since 2026-05-22T20:33:40Z_
+
+## Budget
+$3.21 of $5.00 spent (64%) · 412,309 tokens
+
+## Activity
+- 47 events recorded
+- 1 budget block · 0 kill switch · 0 circuit breaker
+- 12 model downgrades · $1.84 saved (est.)
+```
+
+---
+
+## Hook coverage
+
+ClawGuard works with both OpenClaw runtimes:
 
 | Feature | `anthropic` runtime | `claude-cli` runtime |
 |---|---|---|
 | Budget gate | ✅ | ✅ |
-| Token accounting | ✅ via `llm_output` | ✅ via session watcher¹ |
-| DLP scan (outbound) | ✅ | ✅ |
+| Token accounting | ✅ live | ✅ via session watcher¹ |
+| DLP (inbound + outbound) | ✅ | ✅ |
 | Circuit breaker | ✅ | ✅ |
-| Model downgrade | ✅ | ❌ hook never fires |
+| Model downgrade | ✅ | ❌ |
 
-¹ **Session watcher**: when `claude-cli` is the runtime, clawguard tails `~/.claude/projects/<workspace>/*.jsonl` for token usage. This introduces a one-turn lag (usage from turn N is accounted at turn N+1). Budgets based on hourly windows are unaffected; sub-minute rate limiting is not supported in this mode.
+¹ Session watcher tails `~/.claude/projects/` JSONL files. One-turn lag; hourly budgets are unaffected.
 
-For full hook coverage including model downgrade, install [Meridian](https://github.com/rynfar/meridian) as a proxy layer and run `clawguard setup` — it will register the Meridian plugin automatically.
+---
 
-## Configuration
+## Shadow mode
+
+Not ready to enforce? Start in shadow mode — ClawGuard records every decision it *would* make without blocking or rewriting anything.
+
+```json
+"mode": "shadow"
+```
+
+Switch to `"enforce"` when you're confident in your config.
+
+---
+
+## Full configuration reference
 
 ```json
 {
@@ -104,8 +188,6 @@ For full hook coverage including model downgrade, install [Meridian](https://git
     "maxUsd": 5.0,
     "softLimitRatio": 0.9,
     "delayMs": 250,
-    "reserveTokens": 0,
-    "reserveUsd": 0,
     "persist": true
   },
   "downgrade": {
@@ -121,93 +203,43 @@ For full hook coverage including model downgrade, install [Meridian](https://git
     "threshold": 5,
     "cooldownMs": 30000
   },
+  "anomaly": {
+    "enabled": true,
+    "ratio": 5
+  },
   "dlp": {
     "enabled": true,
-    "onDetect": "log",
-    "scanResponses": true
+    "onDetect": "block",
+    "scanResponses": true,
+    "builtins": "all",
+    "customPatterns": []
   },
   "audit": {
-    "enabled": true,
-    "path": "~/.clawguard/audit.jsonl"
+    "enabled": true
   }
 }
 ```
 
-### Key options
+**`mode`** — `enforce` applies decisions for real. `shadow` logs without acting.
 
-**`mode`** — `enforce` (default) applies decisions for real. `shadow` records what it *would* do without blocking or rewriting anything. Start with `shadow` to validate before enforcing.
+**`failMode`** — `open` lets calls through if ClawGuard itself errors. `closed` blocks on internal errors (fail-safe).
 
-**`failMode`** — `open` (default) lets calls through if clawguard itself errors. `closed` blocks on internal errors (fail-safe).
+**`downgrade.to`** — `sonnet`, `haiku`, `gpt-4o`, or `gpt-3.5-turbo`. Models pricier than the target are rewritten; others are untouched.
 
-**`downgrade.to`** — `sonnet`, `haiku`, `gpt-4o`, or `gpt-3.5-turbo`. Any model pricier than the target is rewritten; models already at or below the target are untouched.
+**`killSwitch.file`** — Drop a file at this path to halt all calls immediately. Delete it to resume.
 
-**`downgrade.whenBudgetRatioAbove`** — `0` (default) downgrades every call unconditionally. `0.8` keeps the premium model until 80% of the budget window is spent, then starts downgrading.
-
-**`killSwitch.file`** — Drop a file at this path to halt all calls immediately, no restart needed. Delete the file to resume.
-
-**`budget.reserveTokens` / `budget.reserveUsd`** — Pre-charge an estimate per in-flight call so concurrent calls can't all slip through a budget check simultaneously. Leave at `0` for purely reactive accounting.
-
-## Testing DLP
-
-Send a message to your agent containing a recognisable secret pattern. With `onDetect: "block"` the message is cancelled before it reaches the model — you'll get no response and an audit entry:
-
-```
-# Telegram / any channel — send one of these:
-my key is sk-ant-api03-xxxxxxxx...
-charge this: 4111 1111 1111 1111
-contact me at user@example.com
-```
-
-Then verify the audit log:
-
-```bash
-cat ~/.clawguard/audit.jsonl | grep dlp | tail -5
-```
-
-You should see a `dlp_block` (or `dlp_redact`) entry with the matched category. With `onDetect: "redact"` the message goes through with the secret replaced by `[REDACTED]`.
-
-## Report
-
-```bash
-node dist/bin/clawguard.js report
-node dist/bin/clawguard.js report --since 7d
-node dist/bin/clawguard.js report --cap-usd 5 --json
-```
-
-Output:
-
-```
-# clawguard report
-_generated 2026-05-23T20:33:40Z · since 2026-05-22T20:33:40Z_
-
-## Budget
-**$3.21 of $5.00** spent (64%) · 412,309 tokens
-_window started 2026-05-23T19:00:00Z_
-
-## Activity
-- 47 events recorded
-- 1 budget blocks · 0 kill switch · 0 circuit breaker
-- 0 DLP hits across 0 categories
-- 12 model downgrades · $1.84 saved (est.)
-
-## Downgrades
-- claude-opus-4-7 → claude-haiku-4-5: 12
-
-## Health
-- Breaker: closed
-- Persistence: healthy
-```
+---
 
 ## Development
 
 ```bash
-npm test           # run all tests
+npm test           # run all tests (no gateway needed)
 npm run typecheck  # type-check without emitting
 npm run build      # compile to dist/
 ```
 
-Tests use [vitest](https://vitest.dev) and run entirely in-process — no OpenClaw gateway needed.
+---
 
 ## License
 
-MIT OR Apache-2.0
+MIT OR Apache-2.0 · [GitHub](https://github.com/blasrodri/clawguard)
