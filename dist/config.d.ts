@@ -6,6 +6,8 @@
  * is the runtime backstop and the security boundary for untrusted config.
  */
 import { type DowngradeTier } from "./core/downgrade.js";
+import { type DlpLabel } from "./core/dlp.js";
+import type { NotificationKind } from "./core/notifier.js";
 export type Mode = "enforce" | "shadow";
 export type DlpAction = "log" | "block";
 /** On an internal error, `open` lets the call proceed; `closed` blocks it. */
@@ -51,19 +53,49 @@ export interface ClawGuardConfig {
         readonly threshold: number;
         readonly cooldownMs: number;
     };
+    /** Flag calls whose cost is much larger than the per-model median. */
+    readonly anomaly: {
+        readonly enabled: boolean;
+        readonly ratio: number;
+        readonly minSamples: number;
+        readonly windowSize: number;
+    };
     readonly dlp: {
         readonly enabled: boolean;
+        /** Default action when a pattern fires and doesn't specify its own. */
         readonly onDetect: DlpAction;
         /** Also scan model *output*, not just outbound messages. */
         readonly scanResponses: boolean;
         /** Max characters scanned per payload (hot-path bound). */
         readonly maxScanChars: number;
+        /** Which built-ins to run. `"all"` (default) or a subset. */
+        readonly builtins: DlpLabel[] | "all";
+        /** Operator-defined patterns. Invalid regexes are skipped at startup. */
+        readonly customPatterns: ReadonlyArray<{
+            readonly name: string;
+            readonly regex: string;
+            readonly flags: string;
+            readonly action?: DlpAction;
+        }>;
     };
     readonly audit: {
         readonly enabled: boolean;
         readonly path: string | undefined;
         /** Rotate the audit file once it exceeds this size in bytes. */
         readonly maxBytes: number;
+    };
+    readonly logging: {
+        /** Emit one info log line per LLM call (pre-flight estimate + actual). */
+        readonly perCallLine: boolean;
+    };
+    readonly notifications: {
+        /** Webhook URL (Slack/Discord/anything that accepts POST JSON). Empty = off. */
+        readonly webhookUrl: string | undefined;
+        /** Budget % thresholds that trigger a notification on first crossing. */
+        readonly thresholds: number[];
+        /** Which event kinds to send. */
+        readonly events: NotificationKind[];
+        readonly timeoutMs: number;
     };
 }
 export declare const DEFAULT_CONFIG: ClawGuardConfig;

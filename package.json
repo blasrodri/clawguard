@@ -17,16 +17,12 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
-    },
-    "./meridian": {
-      "types": "./dist/meridian.d.ts",
-      "import": "./dist/meridian.js"
     }
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "clawguard": "./dist/bin/clawguard.js"
+    "claw-sentinel": "./dist/bin/clawguard.js"
   },
   "repository": {
     "type": "git",
@@ -37,8 +33,7 @@
     "url": "https://github.com/blasrodri/clawguard/issues"
   },
   "publishConfig": {
-    "access": "public",
-    "provenance": true
+    "access": "public"
   },
   "files": [
     "dist",
@@ -50,14 +45,6 @@
   ],
   "engines": {
     "node": ">=20"
-  },
-  "openclaw": {
-    "extensions": [
-      "./dist/index.js"
-    ],
-    "compat": {
-      "minGatewayVersion": "2026.3.24-beta.2"
-    }
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

@@ -17,6 +17,8 @@
  *   - message_sending       → return { cancel? } to drop the outbound msg
  */
 
+import { estimateTokensFromText } from "./core/estimate.js";
+
 export const HOOKS = {
   beforeModelResolve: "before_model_resolve",
   beforeAgentRun: "before_agent_run",
@@ -38,13 +40,13 @@ const DEFAULT_PROVIDER = "anthropic";
 
 export interface PluginApi {
   /** Register a handler for a named lifecycle hook. */
-  registerHook(hook: string, handler: HookHandler): void;
-  /** Plugin-scoped config from `plugins.entries.<id>.config` in openclaw.json. */
-  readonly pluginConfig?: unknown;
-  /** Gateway logger. */
-  readonly logger: {
-    info(msg: string): void;
-    warn(msg: string): void;
+  on(hook: string, handler: HookHandler): void;
+  /** Plugin-scoped config object from `openclaw.json`. */
+  readonly config?: unknown;
+  /** Gateway logger, if exposed. */
+  readonly logger?: {
+    info?(msg: string): void;
+    warn?(msg: string): void;
     error?(msg: string): void;
   };
 }
@@ -127,6 +129,51 @@ export function readMessageText(ctx: unknown): string | undefined {
 export function readPromptText(ctx: unknown): string | undefined {
   const obj = asRecord(ctx);
   return firstString(obj, ["prompt", "text", "content", "body", "message"]);
+}
+
+export interface PromptEstimate {
+  readonly inputTokens: number;
+  /** "reported" when the SDK gave us a real number; "estimated" via chars/4. */
+  readonly source: "reported" | "estimated" | "unknown";
+}
+
+/**
+ * Best-effort pre-flight input-token count from a `before_model_resolve`
+ * context. Prefers a reported count if any obvious field carries one;
+ * otherwise estimates from prompt / messages text via `chars/4`. Returns
+ * `inputTokens: 0` when the context exposes nothing usable — callers
+ * should treat that as "no estimate available."
+ */
+export function readPromptEstimate(ctx: unknown): PromptEstimate {
+  const obj = asRecord(ctx);
+  const reported = firstNumber(obj, [
+    "inputTokens",
+    "input_tokens",
+    "promptTokens",
+    "prompt_tokens",
+    "tokenEstimate",
+    "contextTokenBudget",
+  ]);
+  if (reported > 0) {
+    return { inputTokens: reported, source: "reported" };
+  }
+  const inline = firstString(obj, ["prompt", "text", "input", "content"]);
+  if (inline) {
+    return { inputTokens: estimateTokensFromText(inline), source: "estimated" };
+  }
+  if (Array.isArray(obj.messages)) {
+    let chars = 0;
+    for (const m of obj.messages) {
+      const text = firstString(asRecord(m), ["content", "text"]);
+      if (text) {
+        chars += text.length;
+      }
+    }
+    if (chars > 0) {
+      return { inputTokens: estimateTokensFromText("x".repeat(chars)), source: "estimated" };
+    }
+  }
+  return { inputTokens: 0, source: "unknown" };
 }
 
 /**

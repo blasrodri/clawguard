@@ -15,10 +15,19 @@
 import { existsSync } from "node:fs";
 
 import type { ClawGuardConfig } from "../config.js";
+import { AnomalyDetector } from "./anomaly.js";
 import { AuditLog, FileAuditSink, type AuditSink } from "./audit.js";
-import { BudgetWindow, type Clock } from "./budget.js";
-import { scan, type DlpLabel } from "./dlp.js";
+import { BudgetWindow, type Clock, type BudgetSnapshot } from "./budget.js";
+import { Detectors, type CustomPattern } from "./dlp.js";
+import {
+  NullNotifier,
+  WebhookNotifier,
+  type NotificationEvent,
+  type NotificationKind,
+  type Notifier,
+} from "./notifier.js";
 import { evaluate, savingsUsd, type DowngradeDecision } from "./downgrade.js";
+import { estimateCallCostUsd } from "./estimate.js";
 import { costUsd, type Provider } from "./pricing.js";
 import { FileStore, MemoryStore, type GovernanceStore } from "./store.js";
 
@@ -29,6 +38,8 @@ const MAX_PENDING_DOWNGRADES = 1024;
 export interface ModelResolveInput {
   readonly provider: Provider;
   readonly model: string | undefined;
+  /** Pre-flight input-token estimate (0 = no usable estimate from the SDK). */
+  readonly estimatedInputTokens?: number;
 }
 
 export interface ModelResolveOutcome {
@@ -55,7 +66,7 @@ export interface UsageInput {
 
 export interface MessageScanOutcome {
   readonly cancel: boolean;
-  readonly labels: DlpLabel[];
+  readonly labels: string[];
 }
 
 export interface GovernorStatus {
@@ -84,6 +95,8 @@ export interface GovernorDeps {
   readonly auditSink?: AuditSink;
   /** Override kill-switch file existence check (tests). */
   readonly fileExists?: (path: string) => boolean;
+  /** Override the outbound notifier (tests). Defaults from config. */
+  readonly notifier?: Notifier;
 }
 
 export class Governor {
@@ -92,11 +105,20 @@ export class Governor {
   private readonly logger: Logger;
   private readonly now: Clock;
   private readonly fileExists: (path: string) => boolean;
+  private readonly anomaly: AnomalyDetector;
+  private readonly detectors: Detectors;
+  private readonly notifier: Notifier;
   private readonly pendingDowngrades: DowngradeDecision[] = [];
   private downgradeCount = 0;
   private savedUsd = 0;
   private consecutiveFailures = 0;
   private breakerOpenUntil = 0;
+  /** Budget % thresholds crossed in the current window (deduplicates alerts). */
+  private crossedThresholds = new Set<number>();
+  /** Window start last seen, so we know to reset `crossedThresholds`. */
+  private lastWindowStart = 0;
+  /** Last observed kill-switch state, to fire only on false→true transitions. */
+  private killSwitchAlerted = false;
 
   constructor(
     private readonly config: ClawGuardConfig,
@@ -114,10 +136,58 @@ export class Governor {
       deps.store ?? resolveStore(config, this.audit, this.logger),
       this.now,
     );
+    this.anomaly = new AnomalyDetector(config.anomaly);
+    this.detectors = new Detectors({
+      builtins: config.dlp.builtins,
+      custom: compileCustomPatterns(config.dlp.customPatterns, this.audit, this.logger),
+      defaultAction: config.dlp.onDetect,
+      maxChars: config.dlp.maxScanChars,
+    });
+    this.notifier = deps.notifier ?? buildNotifier(config, () => this.logger, () => this.audit);
+  }
+
+  private sendNotification(kind: NotificationKind, fields: Record<string, unknown>): void {
+    if (!this.config.notifications.events.includes(kind)) {
+      return;
+    }
+    const event: NotificationEvent = {
+      type: kind,
+      ts: new Date(this.now()).toISOString(),
+      ...fields,
+    };
+    this.notifier.send(event);
+  }
+
+  private checkBudgetThresholds(): void {
+    const snap = this.budget.snapshot();
+    if (snap.windowStartedAt !== this.lastWindowStart) {
+      this.crossedThresholds.clear();
+      this.lastWindowStart = snap.windowStartedAt;
+    }
+    const ratio = this.budget.peakRatio();
+    for (const threshold of this.config.notifications.thresholds) {
+      if (ratio >= threshold && !this.crossedThresholds.has(threshold)) {
+        this.crossedThresholds.add(threshold);
+        this.sendNotification("budget_threshold", {
+          threshold,
+          ratio,
+          spentUsd: snap.usdUsed,
+          capUsd: snap.maxUsd,
+          spentTokens: snap.tokensUsed,
+          capTokens: snap.maxTokens,
+        });
+      }
+    }
   }
 
   /** `before_model_resolve`: rewrite to a cheaper model when policy says so. */
   onModelResolve(input: ModelResolveInput): ModelResolveOutcome {
+    const outcome = this.computeModelResolve(input);
+    this.logPreFlight(input, outcome);
+    return outcome;
+  }
+
+  private computeModelResolve(input: ModelResolveInput): ModelResolveOutcome {
     const target = this.config.downgrade.to;
     if (!target) {
       return {};
@@ -154,6 +224,36 @@ export class Governor {
     return { modelOverride: decision.replacement };
   }
 
+  private logPreFlight(input: ModelResolveInput, outcome: ModelResolveOutcome): void {
+    if (!this.config.logging.perCallLine) {
+      return;
+    }
+    const tokens = input.estimatedInputTokens ?? 0;
+    if (tokens <= 0) {
+      return; // no usable estimate from the SDK — skip the line, don't fake it
+    }
+    const finalModel = outcome.modelOverride ?? input.model;
+    const est = estimateCallCostUsd(input.provider, finalModel, tokens);
+    if (est <= 0) {
+      return; // unknown model rate — a "$0.0000 est" line is just noise
+    }
+    const budget = formatBudgetForLog(this.budget.snapshot(), this.config.budget);
+    this.logger.info(
+      `clawguard: ${finalModel ?? "?"} est $${est.toFixed(4)} (${tokens} input tok)` +
+        (budget ? ` · ${budget}` : ""),
+    );
+  }
+
+  private logActualCall(model: string | undefined, cost: number): void {
+    if (!this.config.logging.perCallLine) {
+      return;
+    }
+    const budget = formatBudgetForLog(this.budget.snapshot(), this.config.budget);
+    this.logger.info(
+      `clawguard: ${model ?? "?"} $${cost.toFixed(4)}` + (budget ? ` · ${budget}` : ""),
+    );
+  }
+
   /**
    * `before_agent_run`: refuse to start a turn if the kill switch is
    * engaged, the circuit breaker is open, or the budget is spent.
@@ -165,9 +265,16 @@ export class Governor {
       if (this.config.mode === "enforce") {
         this.audit.record(stop.type, { reason: stop.reason });
         this.logger.warn(`clawguard: blocking run — ${stop.reason}`);
+        if (stop.type === "kill_switch_engaged" && !this.killSwitchAlerted) {
+          this.killSwitchAlerted = true;
+          this.sendNotification("kill_switch", { reason: stop.reason });
+        }
         return { block: true, reason: stop.reason, delayMs: 0 };
       }
       this.audit.record(stop.shadowType, { reason: stop.reason });
+    } else {
+      // Reset the kill-switch latch when the operator removes the file.
+      this.killSwitchAlerted = false;
     }
 
     // The call is going out (passed, delayed, or shadow-allowed): pre-charge
@@ -193,6 +300,10 @@ export class Governor {
     if (this.consecutiveFailures >= this.config.breaker.threshold) {
       this.breakerOpenUntil = this.now() + this.config.breaker.cooldownMs;
       this.audit.record("breaker_open", {
+        consecutiveFailures: this.consecutiveFailures,
+        cooldownMs: this.config.breaker.cooldownMs,
+      });
+      this.sendNotification("breaker_open", {
         consecutiveFailures: this.consecutiveFailures,
         cooldownMs: this.config.breaker.cooldownMs,
       });
@@ -259,6 +370,29 @@ export class Governor {
     );
     this.budget.settle(input.inputTokens + input.outputTokens + cacheReadTokens, cost);
 
+    if (this.config.anomaly.enabled) {
+      const detection = this.anomaly.observe(input.provider, input.model, cost);
+      if (detection.isAnomaly) {
+        this.audit.record("cost_anomaly", {
+          provider: input.provider,
+          model: input.model,
+          costUsd: cost,
+          medianUsd: detection.median,
+          observedRatio: detection.observedRatio,
+        });
+        this.logger.warn(
+          `clawguard: cost anomaly — $${cost.toFixed(4)} is ${detection.observedRatio.toFixed(1)}× the median for ${input.model ?? "?"}`,
+        );
+        this.sendNotification("cost_anomaly", {
+          provider: input.provider,
+          model: input.model,
+          costUsd: cost,
+          medianUsd: detection.median,
+          observedRatio: detection.observedRatio,
+        });
+      }
+    }
+
     if (downgrade) {
       const saved = savingsUsd(downgrade, input.inputTokens);
       this.savedUsd += saved;
@@ -268,27 +402,37 @@ export class Governor {
     }
 
     if (this.config.dlp.enabled && this.config.dlp.scanResponses && input.text) {
-      const labels = scan(input.text, this.config.dlp.maxScanChars);
-      if (labels.length > 0) {
-        this.audit.record("dlp_response", { provider: input.provider, model: input.model, labels });
+      const detections = this.detectors.scan(input.text);
+      if (detections.length > 0) {
+        this.audit.record("dlp_response", {
+          provider: input.provider,
+          model: input.model,
+          labels: detections.map((d) => d.label),
+        });
       }
     }
+
+    this.logActualCall(input.model, cost);
+    this.checkBudgetThresholds();
   }
 
-  /** Scan content for DLP hits; optionally cancel the message. */
-  onMessageSending(text: string | undefined, direction: "inbound" | "outbound" = "outbound"): MessageScanOutcome {
+  /** `message_sending`: scan outbound content; optionally cancel the send. */
+  onMessageSending(text: string | undefined): MessageScanOutcome {
     if (!this.config.dlp.enabled || !text) {
       return { cancel: false, labels: [] };
     }
-    const labels = scan(text, this.config.dlp.maxScanChars);
-    if (labels.length === 0) {
+    const detections = this.detectors.scan(text);
+    if (detections.length === 0) {
       return { cancel: false, labels: [] };
     }
-
-    const enforceBlock = this.config.dlp.onDetect === "block" && this.config.mode === "enforce";
-    this.audit.record(enforceBlock ? "dlp_blocked" : "dlp_detected", { labels, direction });
+    const labels = detections.map((d) => d.label);
+    // Any pattern's *resolved* action of "block" cancels the send in
+    // enforce mode. Per-pattern actions override the global default.
+    const wantsBlock = detections.some((d) => d.action === "block");
+    const enforceBlock = wantsBlock && this.config.mode === "enforce";
+    this.audit.record(enforceBlock ? "dlp_blocked" : "dlp_detected", { labels });
     if (enforceBlock) {
-      this.logger.warn(`clawguard: blocked ${direction} message — DLP hit ${labels.join(",")}`);
+      this.logger.warn(`clawguard: cancelled outbound message — DLP hit ${labels.join(",")}`);
     }
     return { cancel: enforceBlock, labels };
   }
@@ -356,4 +500,53 @@ function resolveAuditSink(config: ClawGuardConfig, override: AuditSink | undefin
 function defaultPath(file: string): string {
   const home = process.env.HOME ?? process.env.USERPROFILE ?? ".";
   return `${home}/.clawguard/${file}`;
+}
+
+function buildNotifier(
+  config: ClawGuardConfig,
+  getLogger: () => Logger,
+  getAudit: () => AuditLog,
+): Notifier {
+  const url = config.notifications.webhookUrl;
+  if (!url) {
+    return new NullNotifier();
+  }
+  return new WebhookNotifier({
+    url,
+    timeoutMs: config.notifications.timeoutMs,
+    onError: (event, err) => {
+      getLogger().warn(`clawguard: notification ${event.type} failed — ${String(err)}`);
+      getAudit().record("notification_failed", { type: event.type, error: String(err) });
+    },
+  });
+}
+
+function compileCustomPatterns(
+  raw: ClawGuardConfig["dlp"]["customPatterns"],
+  audit: AuditLog,
+  logger: Logger,
+): CustomPattern[] {
+  const out: CustomPattern[] = [];
+  for (const p of raw) {
+    try {
+      const regex = new RegExp(p.regex, p.flags);
+      out.push(p.action !== undefined ? { name: p.name, regex, action: p.action } : { name: p.name, regex });
+    } catch (err) {
+      audit.record("dlp_pattern_invalid", { name: p.name, reason: String(err) });
+      logger.warn(`clawguard: skipping invalid DLP pattern "${p.name}": ${String(err)}`);
+    }
+  }
+  return out;
+}
+
+function formatBudgetForLog(snap: BudgetSnapshot, cfg: ClawGuardConfig["budget"]): string {
+  if (cfg.maxUsd && cfg.maxUsd > 0) {
+    const pct = Math.min(100, Math.round((snap.usdUsed / cfg.maxUsd) * 100));
+    return `window $${snap.usdUsed.toFixed(2)} / $${cfg.maxUsd.toFixed(2)} (${pct}%)`;
+  }
+  if (cfg.maxTokens && cfg.maxTokens > 0) {
+    const pct = Math.min(100, Math.round((snap.tokensUsed / cfg.maxTokens) * 100));
+    return `window ${snap.tokensUsed} / ${cfg.maxTokens} tok (${pct}%)`;
+  }
+  return "";
 }

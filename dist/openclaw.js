@@ -16,6 +16,7 @@
  *   - model_call_ended      → observe sanitized call metadata (usage)
  *   - message_sending       → return { cancel? } to drop the outbound msg
  */
+import { estimateTokensFromText } from "./core/estimate.js";
 export const HOOKS = {
     beforeModelResolve: "before_model_resolve",
     beforeAgentRun: "before_agent_run",
@@ -85,6 +86,44 @@ export function readMessageText(ctx) {
 export function readPromptText(ctx) {
     const obj = asRecord(ctx);
     return firstString(obj, ["prompt", "text", "content", "body", "message"]);
+}
+/**
+ * Best-effort pre-flight input-token count from a `before_model_resolve`
+ * context. Prefers a reported count if any obvious field carries one;
+ * otherwise estimates from prompt / messages text via `chars/4`. Returns
+ * `inputTokens: 0` when the context exposes nothing usable — callers
+ * should treat that as "no estimate available."
+ */
+export function readPromptEstimate(ctx) {
+    const obj = asRecord(ctx);
+    const reported = firstNumber(obj, [
+        "inputTokens",
+        "input_tokens",
+        "promptTokens",
+        "prompt_tokens",
+        "tokenEstimate",
+        "contextTokenBudget",
+    ]);
+    if (reported > 0) {
+        return { inputTokens: reported, source: "reported" };
+    }
+    const inline = firstString(obj, ["prompt", "text", "input", "content"]);
+    if (inline) {
+        return { inputTokens: estimateTokensFromText(inline), source: "estimated" };
+    }
+    if (Array.isArray(obj.messages)) {
+        let chars = 0;
+        for (const m of obj.messages) {
+            const text = firstString(asRecord(m), ["content", "text"]);
+            if (text) {
+                chars += text.length;
+            }
+        }
+        if (chars > 0) {
+            return { inputTokens: estimateTokensFromText("x".repeat(chars)), source: "estimated" };
+        }
+    }
+    return { inputTokens: 0, source: "unknown" };
 }
 /**
  * Did a model call succeed? Read from `model_call_ended`. Defensive: an

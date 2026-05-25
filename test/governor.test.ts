@@ -204,6 +204,154 @@ describe("Governor budget-aware downgrade", () => {
   });
 });
 
+describe("Governor per-call log line", () => {
+  function setupWithLogs(config: ClawGuardConfig) {
+    const logs: string[] = [];
+    const logger = { info: (m: string) => logs.push(m), warn: () => {} };
+    const governor = new Governor(config, {
+      auditSink: new MemoryAuditSink(),
+      store: new MemoryStore(),
+      logger,
+      clock: () => 0,
+    });
+    return { governor, logs };
+  }
+
+  it("emits a pre-flight estimate line when an input-token estimate is provided", () => {
+    const { governor, logs } = setupWithLogs(
+      makeConfig({ budget: { ...DEFAULT_CONFIG.budget, maxUsd: 5 } }),
+    );
+    governor.onModelResolve({
+      provider: "anthropic",
+      model: "claude-opus",
+      estimatedInputTokens: 1_000,
+    });
+    expect(logs.some((l) => l.includes("est $") && l.includes("claude-opus"))).toBe(true);
+  });
+
+  it("emits an actual-cost line at usage time, showing budget percentage", () => {
+    const { governor, logs } = setupWithLogs(
+      makeConfig({ budget: { ...DEFAULT_CONFIG.budget, maxUsd: 10 } }),
+    );
+    governor.onUsage({
+      provider: "anthropic",
+      model: "claude-opus",
+      inputTokens: 100_000,
+      outputTokens: 0,
+    });
+    // 100k opus input = $1.50 of a $10 cap → 15%
+    const line = logs.find((l) => l.startsWith("clawguard: claude-opus $"));
+    expect(line).toBeDefined();
+    expect(line).toContain("$1.5000");
+    expect(line).toContain("(15%)");
+  });
+
+  it("is silent when logging.perCallLine is false", () => {
+    const { governor, logs } = setupWithLogs(
+      makeConfig({
+        logging: { perCallLine: false },
+        budget: { ...DEFAULT_CONFIG.budget, maxUsd: 5 },
+      }),
+    );
+    governor.onModelResolve({
+      provider: "anthropic",
+      model: "claude-opus",
+      estimatedInputTokens: 1_000,
+    });
+    governor.onUsage({
+      provider: "anthropic",
+      model: "claude-opus",
+      inputTokens: 100,
+      outputTokens: 0,
+    });
+    expect(logs).toEqual([]);
+  });
+
+  it("skips the pre-flight line for unknown models (no faking $0)", () => {
+    const { governor, logs } = setupWithLogs(makeConfig());
+    governor.onModelResolve({
+      provider: "anthropic",
+      model: "made-up-model",
+      estimatedInputTokens: 1_000,
+    });
+    expect(logs).toEqual([]);
+  });
+});
+
+describe("Governor budget-threshold notifications", () => {
+  it("fires a webhook on the first call that crosses each threshold (no spam)", () => {
+    const events: Array<{ type: string; threshold?: number }> = [];
+    const sink = new MemoryAuditSink();
+    let t = 0;
+    const governor = new Governor(
+      makeConfig({
+        budget: { ...DEFAULT_CONFIG.budget, maxUsd: 10 },
+        notifications: {
+          ...DEFAULT_CONFIG.notifications,
+          webhookUrl: "https://example/x",
+          thresholds: [0.5, 0.9, 1.0],
+          events: ["budget_threshold"],
+        },
+      }),
+      {
+        auditSink: sink,
+        store: new MemoryStore(),
+        clock: () => t,
+        notifier: {
+          send: (ev) => events.push({ type: ev.type, threshold: ev.threshold as number }),
+        },
+      },
+    );
+
+    // $5 → 50% → fires the 0.5 threshold once.
+    governor.onUsage({ provider: "anthropic", model: "claude-opus", inputTokens: 333_333, outputTokens: 0 });
+    // Another $5 → 100% → fires 0.9 and 1.0 in one go.
+    governor.onUsage({ provider: "anthropic", model: "claude-opus", inputTokens: 333_333, outputTokens: 0 });
+    // Further calls in the same window do NOT re-fire 0.5/0.9/1.0.
+    governor.onUsage({ provider: "anthropic", model: "claude-opus", inputTokens: 100, outputTokens: 0 });
+
+    const thresholds = events
+      .filter((e) => e.type === "budget_threshold")
+      .map((e) => e.threshold);
+    expect(thresholds.sort()).toEqual([0.5, 0.9, 1.0]);
+  });
+});
+
+describe("Governor custom DLP patterns", () => {
+  it("uses an operator-defined pattern to cancel the send via per-pattern action", () => {
+    const { governor, sink } = setup(
+      makeConfig({
+        dlp: {
+          ...DEFAULT_CONFIG.dlp,
+          onDetect: "log", // log by default
+          customPatterns: [
+            { name: "customer_id", regex: "CUST-[A-Z0-9]{8}", flags: "", action: "block" },
+          ],
+        },
+      }),
+    );
+    const out = governor.onMessageSending("see CUST-AB12CD34");
+    expect(out.cancel).toBe(true);
+    expect(out.labels).toContain("customer_id");
+    expect(sink.events().map((e) => e.type)).toContain("dlp_blocked");
+  });
+
+  it("skips invalid regexes and audits the failure", () => {
+    const { governor, sink } = setup(
+      makeConfig({
+        dlp: {
+          ...DEFAULT_CONFIG.dlp,
+          customPatterns: [{ name: "broken", regex: "[unterminated", flags: "" }],
+        },
+      }),
+    );
+    // No throw on construction; the invalid pattern is recorded.
+    expect(sink.events().map((e) => e.type)).toContain("dlp_pattern_invalid");
+    // And the message scan still works for built-ins.
+    expect(governor.onMessageSending("SSN: 123-45-6789").labels).toContain("ssn");
+  });
+});
+
 describe("Governor.onMessageSending", () => {
   it("cancels an outbound message with secrets when onDetect=block", () => {
     const { governor, sink } = setup(makeConfig({ dlp: { ...DEFAULT_CONFIG.dlp, onDetect: "block" } }));

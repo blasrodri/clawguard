@@ -14,12 +14,14 @@
 import type { ClawGuardConfig } from "../config.js";
 import { type AuditSink } from "./audit.js";
 import { BudgetWindow, type Clock } from "./budget.js";
-import { type DlpLabel } from "./dlp.js";
+import { type Notifier } from "./notifier.js";
 import { type Provider } from "./pricing.js";
 import { type GovernanceStore } from "./store.js";
 export interface ModelResolveInput {
     readonly provider: Provider;
     readonly model: string | undefined;
+    /** Pre-flight input-token estimate (0 = no usable estimate from the SDK). */
+    readonly estimatedInputTokens?: number;
 }
 export interface ModelResolveOutcome {
     readonly modelOverride?: string;
@@ -42,7 +44,7 @@ export interface UsageInput {
 }
 export interface MessageScanOutcome {
     readonly cancel: boolean;
-    readonly labels: DlpLabel[];
+    readonly labels: string[];
 }
 export interface GovernorStatus {
     readonly mode: string;
@@ -66,6 +68,8 @@ export interface GovernorDeps {
     readonly auditSink?: AuditSink;
     /** Override kill-switch file existence check (tests). */
     readonly fileExists?: (path: string) => boolean;
+    /** Override the outbound notifier (tests). Defaults from config. */
+    readonly notifier?: Notifier;
 }
 export declare class Governor {
     private readonly config;
@@ -74,14 +78,28 @@ export declare class Governor {
     private readonly logger;
     private readonly now;
     private readonly fileExists;
+    private readonly anomaly;
+    private readonly detectors;
+    private readonly notifier;
     private readonly pendingDowngrades;
     private downgradeCount;
     private savedUsd;
     private consecutiveFailures;
     private breakerOpenUntil;
+    /** Budget % thresholds crossed in the current window (deduplicates alerts). */
+    private crossedThresholds;
+    /** Window start last seen, so we know to reset `crossedThresholds`. */
+    private lastWindowStart;
+    /** Last observed kill-switch state, to fire only on false→true transitions. */
+    private killSwitchAlerted;
     constructor(config: ClawGuardConfig, deps?: GovernorDeps);
+    private sendNotification;
+    private checkBudgetThresholds;
     /** `before_model_resolve`: rewrite to a cheaper model when policy says so. */
     onModelResolve(input: ModelResolveInput): ModelResolveOutcome;
+    private computeModelResolve;
+    private logPreFlight;
+    private logActualCall;
     /**
      * `before_agent_run`: refuse to start a turn if the kill switch is
      * engaged, the circuit breaker is open, or the budget is spent.
@@ -94,8 +112,8 @@ export declare class Governor {
     private breakerActive;
     /** `llm_output`: reconcile usage, attribute savings, scan the response. */
     onUsage(input: UsageInput): void;
-    /** Scan content for DLP hits; optionally cancel the message. */
-    onMessageSending(text: string | undefined, direction?: "inbound" | "outbound"): MessageScanOutcome;
+    /** `message_sending`: scan outbound content; optionally cancel the send. */
+    onMessageSending(text: string | undefined): MessageScanOutcome;
     /** Flush any buffered audit records (call on shutdown). */
     flush(): void;
     /** Point-in-time view for status reporting. */

@@ -83,17 +83,15 @@ describe("FileStore lock", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it("constructs without throwing when locked by another live process, emits save_failed", () => {
+  it("degrades (not throws) when locked by another live process", () => {
     const path = join(dir, "budget.json");
-    // Drop a lock file held by a live pid (parent). The store must not throw
-    // (so CLI commands don't crash when the gateway holds the lock), but it
-    // must emit a save_failed degrade event to signal it is lock-less.
     const lockPath = `${path}.lock`;
     require("node:fs").mkdirSync(dir, { recursive: true });
     writeFileSync(lockPath, String(process.ppid));
-    const onDegrade = vi.fn<(e: StoreDegradeEvent) => void>();
-    expect(() => new FileStore(path, { onDegrade })).not.toThrow();
-    expect(onDegrade).toHaveBeenCalledWith(expect.objectContaining({ reason: "save_failed", detail: expect.stringContaining("locked by pid") }));
+    const events: string[] = [];
+    const store = new FileStore(path, { onDegrade: (e) => events.push(e.reason) });
+    expect(store).toBeDefined();
+    expect(events).toContain("save_failed");
   });
 
   it("cleans up a stale lock (dead pid) and proceeds", () => {

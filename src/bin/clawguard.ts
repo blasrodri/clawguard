@@ -7,12 +7,10 @@
 import { parseArgs } from "node:util";
 
 import { runReport } from "../report.js";
-import { runSetup } from "./setup.js";
 
 const TOP_LEVEL_HELP = `Usage: clawguard <command> [options]
 
 Commands:
-  setup      Fix OpenClaw config so clawguard hooks actually fire (run once after install).
   report     Render a human-readable digest of the audit log.
 
 Run \`clawguard <command> --help\` for command-specific options.`;
@@ -39,55 +37,12 @@ function main(): number {
   }
 
   switch (subcommand) {
-    case "setup":
-      return setupCmd(rest);
     case "report":
       return reportCmd(rest);
     default:
       process.stderr.write(`unknown subcommand: ${subcommand}\n\n${TOP_LEVEL_HELP}\n`);
       return 2;
   }
-}
-
-const SETUP_HELP = `Usage: clawguard setup [options]
-
-Fix OpenClaw configuration so clawguard hooks actually fire.
-Run this once after installing clawguard.
-
-What it does:
-  1. Grants operator.write + operator.pairing to your local CLI device
-     (fixes the approval catch-22 that blocks \`openclaw agent\` commands).
-  2. Removes claude-cli agentRuntime overrides so models use the anthropic
-     runtime, which is the only runtime where clawguard hooks fire.
-  3. Restarts the OpenClaw gateway to apply changes.
-
-Options:
-  --dry-run    Show what would change without writing anything.
-  --json       Emit result as JSON.
-  -h, --help   Show this help.`;
-
-function setupCmd(args: string[]): number {
-  let parsed: ReturnType<typeof parseArgs>;
-  try {
-    parsed = parseArgs({
-      args,
-      options: {
-        "dry-run": { type: "boolean", default: false },
-        json: { type: "boolean", default: false },
-        help: { type: "boolean", short: "h", default: false },
-      },
-      strict: true,
-    });
-  } catch (err) {
-    process.stderr.write(`${(err as Error).message}\n\n${SETUP_HELP}\n`);
-    return 2;
-  }
-  const { values } = parsed;
-  if (values.help) {
-    process.stdout.write(SETUP_HELP + "\n");
-    return 0;
-  }
-  return runSetup({ dryRun: values["dry-run"] === true, json: values.json === true });
 }
 
 function reportCmd(args: string[]): number {

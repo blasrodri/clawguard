@@ -27,13 +27,13 @@ export type HookResult = unknown;
 export type HookHandler = (ctx: unknown) => HookResult | Promise<HookResult>;
 export interface PluginApi {
     /** Register a handler for a named lifecycle hook. */
-    registerHook(hook: string, handler: HookHandler): void;
-    /** Plugin-scoped config from `plugins.entries.<id>.config` in openclaw.json. */
-    readonly pluginConfig?: unknown;
-    /** Gateway logger. */
-    readonly logger: {
-        info(msg: string): void;
-        warn(msg: string): void;
+    on(hook: string, handler: HookHandler): void;
+    /** Plugin-scoped config object from `openclaw.json`. */
+    readonly config?: unknown;
+    /** Gateway logger, if exposed. */
+    readonly logger?: {
+        info?(msg: string): void;
+        warn?(msg: string): void;
         error?(msg: string): void;
     };
 }
@@ -55,6 +55,19 @@ export interface UsageCtx {
 export declare function readUsageCtx(ctx: unknown): UsageCtx;
 export declare function readMessageText(ctx: unknown): string | undefined;
 export declare function readPromptText(ctx: unknown): string | undefined;
+export interface PromptEstimate {
+    readonly inputTokens: number;
+    /** "reported" when the SDK gave us a real number; "estimated" via chars/4. */
+    readonly source: "reported" | "estimated" | "unknown";
+}
+/**
+ * Best-effort pre-flight input-token count from a `before_model_resolve`
+ * context. Prefers a reported count if any obvious field carries one;
+ * otherwise estimates from prompt / messages text via `chars/4`. Returns
+ * `inputTokens: 0` when the context exposes nothing usable — callers
+ * should treat that as "no estimate available."
+ */
+export declare function readPromptEstimate(ctx: unknown): PromptEstimate;
 /**
  * Did a model call succeed? Read from `model_call_ended`. Defensive: an
  * explicit error, a failure-shaped outcome string, or an HTTP status >= 400

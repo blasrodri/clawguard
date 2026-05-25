@@ -12,10 +12,13 @@
  * matching each resolve-time decision (FIFO) to its later usage event.
  */
 import { existsSync } from "node:fs";
+import { AnomalyDetector } from "./anomaly.js";
 import { AuditLog, FileAuditSink } from "./audit.js";
 import { BudgetWindow } from "./budget.js";
-import { scan } from "./dlp.js";
+import { Detectors } from "./dlp.js";
+import { NullNotifier, WebhookNotifier, } from "./notifier.js";
 import { evaluate, savingsUsd } from "./downgrade.js";
+import { estimateCallCostUsd } from "./estimate.js";
 import { costUsd } from "./pricing.js";
 import { FileStore, MemoryStore } from "./store.js";
 /** Cap on un-settled downgrade decisions, so a resolve-without-usage
@@ -29,11 +32,20 @@ export class Governor {
     logger;
     now;
     fileExists;
+    anomaly;
+    detectors;
+    notifier;
     pendingDowngrades = [];
     downgradeCount = 0;
     savedUsd = 0;
     consecutiveFailures = 0;
     breakerOpenUntil = 0;
+    /** Budget % thresholds crossed in the current window (deduplicates alerts). */
+    crossedThresholds = new Set();
+    /** Window start last seen, so we know to reset `crossedThresholds`. */
+    lastWindowStart = 0;
+    /** Last observed kill-switch state, to fire only on false→true transitions. */
+    killSwitchAlerted = false;
     constructor(config, deps = {}) {
         this.config = config;
         this.now = deps.clock ?? Date.now;
@@ -44,9 +56,54 @@ export class Governor {
         // surfaced in the audit log, not swallowed.
         this.audit = new AuditLog(resolveAuditSink(config, deps.auditSink), this.now);
         this.budget = new BudgetWindow(config.budget, deps.store ?? resolveStore(config, this.audit, this.logger), this.now);
+        this.anomaly = new AnomalyDetector(config.anomaly);
+        this.detectors = new Detectors({
+            builtins: config.dlp.builtins,
+            custom: compileCustomPatterns(config.dlp.customPatterns, this.audit, this.logger),
+            defaultAction: config.dlp.onDetect,
+            maxChars: config.dlp.maxScanChars,
+        });
+        this.notifier = deps.notifier ?? buildNotifier(config, () => this.logger, () => this.audit);
+    }
+    sendNotification(kind, fields) {
+        if (!this.config.notifications.events.includes(kind)) {
+            return;
+        }
+        const event = {
+            type: kind,
+            ts: new Date(this.now()).toISOString(),
+            ...fields,
+        };
+        this.notifier.send(event);
+    }
+    checkBudgetThresholds() {
+        const snap = this.budget.snapshot();
+        if (snap.windowStartedAt !== this.lastWindowStart) {
+            this.crossedThresholds.clear();
+            this.lastWindowStart = snap.windowStartedAt;
+        }
+        const ratio = this.budget.peakRatio();
+        for (const threshold of this.config.notifications.thresholds) {
+            if (ratio >= threshold && !this.crossedThresholds.has(threshold)) {
+                this.crossedThresholds.add(threshold);
+                this.sendNotification("budget_threshold", {
+                    threshold,
+                    ratio,
+                    spentUsd: snap.usdUsed,
+                    capUsd: snap.maxUsd,
+                    spentTokens: snap.tokensUsed,
+                    capTokens: snap.maxTokens,
+                });
+            }
+        }
     }
     /** `before_model_resolve`: rewrite to a cheaper model when policy says so. */
     onModelResolve(input) {
+        const outcome = this.computeModelResolve(input);
+        this.logPreFlight(input, outcome);
+        return outcome;
+    }
+    computeModelResolve(input) {
         const target = this.config.downgrade.to;
         if (!target) {
             return {};
@@ -79,6 +136,30 @@ export class Governor {
         this.logger.info(`clawguard: downgraded ${input.model ?? "?"} -> ${decision.replacement}`);
         return { modelOverride: decision.replacement };
     }
+    logPreFlight(input, outcome) {
+        if (!this.config.logging.perCallLine) {
+            return;
+        }
+        const tokens = input.estimatedInputTokens ?? 0;
+        if (tokens <= 0) {
+            return; // no usable estimate from the SDK — skip the line, don't fake it
+        }
+        const finalModel = outcome.modelOverride ?? input.model;
+        const est = estimateCallCostUsd(input.provider, finalModel, tokens);
+        if (est <= 0) {
+            return; // unknown model rate — a "$0.0000 est" line is just noise
+        }
+        const budget = formatBudgetForLog(this.budget.snapshot(), this.config.budget);
+        this.logger.info(`clawguard: ${finalModel ?? "?"} est $${est.toFixed(4)} (${tokens} input tok)` +
+            (budget ? ` · ${budget}` : ""));
+    }
+    logActualCall(model, cost) {
+        if (!this.config.logging.perCallLine) {
+            return;
+        }
+        const budget = formatBudgetForLog(this.budget.snapshot(), this.config.budget);
+        this.logger.info(`clawguard: ${model ?? "?"} $${cost.toFixed(4)}` + (budget ? ` · ${budget}` : ""));
+    }
     /**
      * `before_agent_run`: refuse to start a turn if the kill switch is
      * engaged, the circuit breaker is open, or the budget is spent.
@@ -90,9 +171,17 @@ export class Governor {
             if (this.config.mode === "enforce") {
                 this.audit.record(stop.type, { reason: stop.reason });
                 this.logger.warn(`clawguard: blocking run — ${stop.reason}`);
+                if (stop.type === "kill_switch_engaged" && !this.killSwitchAlerted) {
+                    this.killSwitchAlerted = true;
+                    this.sendNotification("kill_switch", { reason: stop.reason });
+                }
                 return { block: true, reason: stop.reason, delayMs: 0 };
             }
             this.audit.record(stop.shadowType, { reason: stop.reason });
+        }
+        else {
+            // Reset the kill-switch latch when the operator removes the file.
+            this.killSwitchAlerted = false;
         }
         // The call is going out (passed, delayed, or shadow-allowed): pre-charge
         // its estimate so concurrent and in-flight spend counts immediately.
@@ -116,6 +205,10 @@ export class Governor {
         if (this.consecutiveFailures >= this.config.breaker.threshold) {
             this.breakerOpenUntil = this.now() + this.config.breaker.cooldownMs;
             this.audit.record("breaker_open", {
+                consecutiveFailures: this.consecutiveFailures,
+                cooldownMs: this.config.breaker.cooldownMs,
+            });
+            this.sendNotification("breaker_open", {
                 consecutiveFailures: this.consecutiveFailures,
                 cooldownMs: this.config.breaker.cooldownMs,
             });
@@ -165,6 +258,26 @@ export class Governor {
         }
         const cost = costUsd(input.provider, input.model, input.inputTokens, input.outputTokens, cacheReadTokens);
         this.budget.settle(input.inputTokens + input.outputTokens + cacheReadTokens, cost);
+        if (this.config.anomaly.enabled) {
+            const detection = this.anomaly.observe(input.provider, input.model, cost);
+            if (detection.isAnomaly) {
+                this.audit.record("cost_anomaly", {
+                    provider: input.provider,
+                    model: input.model,
+                    costUsd: cost,
+                    medianUsd: detection.median,
+                    observedRatio: detection.observedRatio,
+                });
+                this.logger.warn(`clawguard: cost anomaly — $${cost.toFixed(4)} is ${detection.observedRatio.toFixed(1)}× the median for ${input.model ?? "?"}`);
+                this.sendNotification("cost_anomaly", {
+                    provider: input.provider,
+                    model: input.model,
+                    costUsd: cost,
+                    medianUsd: detection.median,
+                    observedRatio: detection.observedRatio,
+                });
+            }
+        }
         if (downgrade) {
             const saved = savingsUsd(downgrade, input.inputTokens);
             this.savedUsd += saved;
@@ -173,25 +286,35 @@ export class Governor {
             }
         }
         if (this.config.dlp.enabled && this.config.dlp.scanResponses && input.text) {
-            const labels = scan(input.text, this.config.dlp.maxScanChars);
-            if (labels.length > 0) {
-                this.audit.record("dlp_response", { provider: input.provider, model: input.model, labels });
+            const detections = this.detectors.scan(input.text);
+            if (detections.length > 0) {
+                this.audit.record("dlp_response", {
+                    provider: input.provider,
+                    model: input.model,
+                    labels: detections.map((d) => d.label),
+                });
             }
         }
+        this.logActualCall(input.model, cost);
+        this.checkBudgetThresholds();
     }
-    /** Scan content for DLP hits; optionally cancel the message. */
-    onMessageSending(text, direction = "outbound") {
+    /** `message_sending`: scan outbound content; optionally cancel the send. */
+    onMessageSending(text) {
         if (!this.config.dlp.enabled || !text) {
             return { cancel: false, labels: [] };
         }
-        const labels = scan(text, this.config.dlp.maxScanChars);
-        if (labels.length === 0) {
+        const detections = this.detectors.scan(text);
+        if (detections.length === 0) {
             return { cancel: false, labels: [] };
         }
-        const enforceBlock = this.config.dlp.onDetect === "block" && this.config.mode === "enforce";
-        this.audit.record(enforceBlock ? "dlp_blocked" : "dlp_detected", { labels, direction });
+        const labels = detections.map((d) => d.label);
+        // Any pattern's *resolved* action of "block" cancels the send in
+        // enforce mode. Per-pattern actions override the global default.
+        const wantsBlock = detections.some((d) => d.action === "block");
+        const enforceBlock = wantsBlock && this.config.mode === "enforce";
+        this.audit.record(enforceBlock ? "dlp_blocked" : "dlp_detected", { labels });
         if (enforceBlock) {
-            this.logger.warn(`clawguard: blocked ${direction} message — DLP hit ${labels.join(",")}`);
+            this.logger.warn(`clawguard: cancelled outbound message — DLP hit ${labels.join(",")}`);
         }
         return { cancel: enforceBlock, labels };
     }
@@ -247,5 +370,44 @@ function resolveAuditSink(config, override) {
 function defaultPath(file) {
     const home = process.env.HOME ?? process.env.USERPROFILE ?? ".";
     return `${home}/.clawguard/${file}`;
+}
+function buildNotifier(config, getLogger, getAudit) {
+    const url = config.notifications.webhookUrl;
+    if (!url) {
+        return new NullNotifier();
+    }
+    return new WebhookNotifier({
+        url,
+        timeoutMs: config.notifications.timeoutMs,
+        onError: (event, err) => {
+            getLogger().warn(`clawguard: notification ${event.type} failed — ${String(err)}`);
+            getAudit().record("notification_failed", { type: event.type, error: String(err) });
+        },
+    });
+}
+function compileCustomPatterns(raw, audit, logger) {
+    const out = [];
+    for (const p of raw) {
+        try {
+            const regex = new RegExp(p.regex, p.flags);
+            out.push(p.action !== undefined ? { name: p.name, regex, action: p.action } : { name: p.name, regex });
+        }
+        catch (err) {
+            audit.record("dlp_pattern_invalid", { name: p.name, reason: String(err) });
+            logger.warn(`clawguard: skipping invalid DLP pattern "${p.name}": ${String(err)}`);
+        }
+    }
+    return out;
+}
+function formatBudgetForLog(snap, cfg) {
+    if (cfg.maxUsd && cfg.maxUsd > 0) {
+        const pct = Math.min(100, Math.round((snap.usdUsed / cfg.maxUsd) * 100));
+        return `window $${snap.usdUsed.toFixed(2)} / $${cfg.maxUsd.toFixed(2)} (${pct}%)`;
+    }
+    if (cfg.maxTokens && cfg.maxTokens > 0) {
+        const pct = Math.min(100, Math.round((snap.tokensUsed / cfg.maxTokens) * 100));
+        return `window ${snap.tokensUsed} / ${cfg.maxTokens} tok (${pct}%)`;
+    }
+    return "";
 }
 //# sourceMappingURL=governor.js.map

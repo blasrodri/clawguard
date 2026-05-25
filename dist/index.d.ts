@@ -8,8 +8,8 @@
  * thin — all real decisions live in `core/`, which is exported below so
  * the package doubles as a library.
  */
-declare const _default: any;
-export default _default;
+import { type PluginApi } from "./openclaw.js";
+export default function activate(api: PluginApi): void;
 export { Governor } from "./core/governor.js";
 export { normalizeConfig, DEFAULT_CONFIG } from "./config.js";
 export type { ClawGuardConfig } from "./config.js";

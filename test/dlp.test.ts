@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { scan } from "../src/core/dlp.js";
+import { Detectors, scan } from "../src/core/dlp.js";
 
 describe("dlp.scan", () => {
   it("detects email", () => {
@@ -61,5 +61,49 @@ describe("dlp.scan", () => {
     const hits = scan(prompt);
     expect(hits).toContain("email");
     expect(hits).toContain("phone");
+  });
+});
+
+describe("Detectors (config-driven)", () => {
+  it("matches a custom pattern and uses the operator's label", () => {
+    const d = new Detectors({
+      defaultAction: "log",
+      custom: [{ name: "customer_id", regex: /CUST-[A-Z0-9]{8}/ }],
+    });
+    const hits = d.scan("processing CUST-AB12CD34 now");
+    expect(hits.map((h) => h.label)).toContain("customer_id");
+  });
+
+  it("per-pattern action overrides the default", () => {
+    const d = new Detectors({
+      defaultAction: "log",
+      custom: [
+        { name: "tame", regex: /tame/, action: "log" },
+        { name: "dangerous", regex: /dangerous/, action: "block" },
+      ],
+    });
+    const hits = d.scan("tame and dangerous");
+    expect(hits.find((h) => h.label === "tame")?.action).toBe("log");
+    expect(hits.find((h) => h.label === "dangerous")?.action).toBe("block");
+  });
+
+  it("only runs the built-ins it was given", () => {
+    const d = new Detectors({ defaultAction: "log", builtins: ["ssn"] });
+    const hits = d.scan("call me at +1 555 123 4567 — SSN 123-45-6789");
+    const labels = hits.map((h) => h.label);
+    expect(labels).toContain("ssn");
+    expect(labels).not.toContain("phone");
+  });
+
+  it("disables every built-in when given an empty list", () => {
+    const d = new Detectors({ defaultAction: "log", builtins: [] });
+    expect(d.scan("SSN: 123-45-6789")).toEqual([]);
+  });
+
+  it("respects the per-instance maxChars cap", () => {
+    const d = new Detectors({ defaultAction: "log", maxChars: 10 });
+    expect(d.scan("xxxxxxxxxxxxxxxxxxxxSSN: 123-45-6789").map((h) => h.label)).not.toContain(
+      "ssn",
+    );
   });
 });

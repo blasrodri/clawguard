@@ -1,10 +1,15 @@
 /**
- * Regex-based DLP detectors for PII / secrets. Ported verbatim (patterns
- * and guards) from turbo-flow's `compliance.rs`. Each detector is cheap
- * enough to run on the hot path, one message at a time.
+ * Regex-based DLP detectors for PII / secrets / operator-defined patterns.
  *
- * `scan` returns a stable-ordered list of category labels; empty when
- * nothing fires.
+ * The six built-ins are ported verbatim (patterns and guards) from
+ * turbo-flow's `compliance.rs`. Custom patterns come from the operator's
+ * config — they get their own label and (optionally) their own action,
+ * so a team can say "log internal codenames but BLOCK any leak of our
+ * customer-id format" in one config block.
+ *
+ * Each detector is cheap enough to run on the hot path one message at a
+ * time. Input is capped at `maxChars` (default 64 KiB) so a multi-MiB
+ * payload or an adversarial digit run can't stall the gateway.
  */
 
 export type DlpLabel =
@@ -14,6 +19,44 @@ export type DlpLabel =
   | "ssn"
   | "api_key"
   | "bearer_token";
+
+export const BUILTIN_LABELS: readonly DlpLabel[] = [
+  "email",
+  "phone",
+  "credit_card",
+  "ssn",
+  "api_key",
+  "bearer_token",
+];
+
+export type DlpAction = "log" | "block";
+
+export interface CustomPattern {
+  readonly name: string;
+  readonly regex: RegExp;
+  /** Overrides the detector's default action when this pattern matches. */
+  readonly action?: DlpAction;
+}
+
+export interface Detection {
+  readonly label: string;
+  readonly action: DlpAction;
+}
+
+export interface DetectorOptions {
+  /** Which built-ins to run. `"all"` (default) or a subset. */
+  readonly builtins?: DlpLabel[] | "all";
+  /** Pre-compiled operator-defined patterns. Invalid ones must be filtered
+   *  upstream — Detectors trusts the regexes it receives. */
+  readonly custom?: ReadonlyArray<CustomPattern>;
+  /** Action used for any matched pattern that doesn't specify its own. */
+  readonly defaultAction: DlpAction;
+  /** Cap on scanned characters. */
+  readonly maxChars?: number;
+}
+
+/** Default cap on scanned characters — bounds regex cost on large payloads. */
+export const DEFAULT_MAX_SCAN_CHARS = 65_536;
 
 // Permissive local part to catch "first.last+tag@example.co.uk".
 const EMAIL = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/;
@@ -29,45 +72,77 @@ const API_KEY =
 // Authorization / x-api-key header position with a token-length value.
 const BEARER = /\b(?:authorization|x-api-key)\s*[:=]\s*(?:bearer\s+)?[A-Za-z0-9._\-]{20,}/i;
 
-/** Default cap on scanned characters — bounds regex cost on large payloads. */
-export const DEFAULT_MAX_SCAN_CHARS = 65_536;
+/** Stateful detector built from a config snapshot. */
+export class Detectors {
+  private readonly builtinsEnabled: Set<DlpLabel>;
+  private readonly custom: ReadonlyArray<CustomPattern>;
+  private readonly defaultAction: DlpAction;
+  private readonly maxChars: number;
 
+  constructor(options: DetectorOptions) {
+    const b = options.builtins ?? "all";
+    this.builtinsEnabled = new Set(b === "all" ? BUILTIN_LABELS : b);
+    this.custom = options.custom ?? [];
+    this.defaultAction = options.defaultAction;
+    this.maxChars = options.maxChars ?? DEFAULT_MAX_SCAN_CHARS;
+  }
+
+  scan(input: string): Detection[] {
+    const text = input.length > this.maxChars ? input.slice(0, this.maxChars) : input;
+    const hits: Detection[] = [];
+
+    if (this.builtinsEnabled.has("email") && EMAIL.test(text)) {
+      hits.push({ label: "email", action: this.defaultAction });
+    }
+    if (this.builtinsEnabled.has("phone")) {
+      // Phone is noisy: require a separator-shaped match AND low overall digit
+      // density, so JSON token blobs ("input_tokens": 554) don't false-positive.
+      const phoneMatches = text.match(PHONE) ?? [];
+      const phoneShaped = phoneMatches.some(
+        (m) =>
+          m.startsWith("+") || m.includes("-") || m.includes(" ") || m.includes("."),
+      );
+      if (phoneShaped && phoneDensityOk(text)) {
+        hits.push({ label: "phone", action: this.defaultAction });
+      }
+    }
+    if (this.builtinsEnabled.has("credit_card")) {
+      const cardMatches = text.match(CREDIT_CARD) ?? [];
+      if (cardMatches.some(luhnOk)) {
+        hits.push({ label: "credit_card", action: this.defaultAction });
+      }
+    }
+    if (this.builtinsEnabled.has("ssn") && SSN.test(text)) {
+      hits.push({ label: "ssn", action: this.defaultAction });
+    }
+    if (this.builtinsEnabled.has("api_key") && API_KEY.test(text)) {
+      hits.push({ label: "api_key", action: this.defaultAction });
+    }
+    if (this.builtinsEnabled.has("bearer_token") && BEARER.test(text)) {
+      hits.push({ label: "bearer_token", action: this.defaultAction });
+    }
+
+    for (const pattern of this.custom) {
+      // RegExp.test() is stateful for /g patterns — reset lastIndex so a
+      // detector instance reused across many scans behaves consistently.
+      pattern.regex.lastIndex = 0;
+      if (pattern.regex.test(text)) {
+        hits.push({ label: pattern.name, action: pattern.action ?? this.defaultAction });
+      }
+    }
+
+    return hits;
+  }
+}
+
+/**
+ * Convenience: scan with the six built-ins at `log` severity, no custom
+ * patterns. Retained for callers that just want a label list — the
+ * Detectors class is what the governor actually uses in production.
+ */
 export function scan(input: string, maxChars: number = DEFAULT_MAX_SCAN_CHARS): DlpLabel[] {
-  // Cap the scanned length so a multi-megabyte (or adversarial) payload
-  // can't stall the gateway's hot path on backtracking regexes.
-  const text = input.length > maxChars ? input.slice(0, maxChars) : input;
-  const hits: DlpLabel[] = [];
-
-  if (EMAIL.test(text)) {
-    hits.push("email");
-  }
-
-  // Phone is noisy: require a separator-shaped match AND low overall digit
-  // density, so JSON token blobs ("input_tokens": 554) don't false-positive.
-  const phoneMatches = text.match(PHONE) ?? [];
-  const phoneShaped = phoneMatches.some(
-    (m) => m.startsWith("+") || m.includes("-") || m.includes(" ") || m.includes("."),
-  );
-  if (phoneShaped && phoneDensityOk(text)) {
-    hits.push("phone");
-  }
-
-  const cardMatches = text.match(CREDIT_CARD) ?? [];
-  if (cardMatches.some(luhnOk)) {
-    hits.push("credit_card");
-  }
-
-  if (SSN.test(text)) {
-    hits.push("ssn");
-  }
-  if (API_KEY.test(text)) {
-    hits.push("api_key");
-  }
-  if (BEARER.test(text)) {
-    hits.push("bearer_token");
-  }
-
-  return hits;
+  const detector = new Detectors({ defaultAction: "log", maxChars });
+  return detector.scan(input).map((d) => d.label as DlpLabel);
 }
 
 /** Refuse to flag phone numbers in text that is mostly digits (JSON blobs). */
