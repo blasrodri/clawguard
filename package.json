@@ -1,5 +1,5 @@
 {
-  "name": "@blasrodri/claw-sentinel",
+  "name": "@blasrodri/clawguard",
   "version": "0.1.1",
   "description": "In-process governance plugin for OpenClaw: per-window budget enforcement, policy-driven model downgrade, and DLP/audit for outbound LLM calls.",
   "type": "module",
@@ -22,7 +22,7 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "claw-sentinel": "./dist/bin/clawguard.js"
+    "clarguard": "./dist/bin/clarguard.js"
   },
   "repository": {
     "type": "git",

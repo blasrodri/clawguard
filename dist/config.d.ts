@@ -1,7 +1,7 @@
 /**
  * Plugin configuration: types, defaults, and a defensive normalizer that
  * turns the untyped object OpenClaw hands a plugin into a fully-populated,
- * validated `ClawGuardConfig`. The JSON Schema in `openclaw.plugin.json`
+ * validated `ClarGuardConfig`. The JSON Schema in `openclaw.plugin.json`
  * mirrors these fields for the gateway's own validation; this normalizer
  * is the runtime backstop and the security boundary for untrusted config.
  */
@@ -12,10 +12,10 @@ export type Mode = "enforce" | "shadow";
 export type DlpAction = "log" | "block";
 /** On an internal error, `open` lets the call proceed; `closed` blocks it. */
 export type FailMode = "open" | "closed";
-export interface ClawGuardConfig {
+export interface ClarGuardConfig {
     /** `enforce` blocks/rewrites for real; `shadow` only records what it would do. */
     readonly mode: Mode;
-    /** Behaviour when clawguard itself errors. Defaults to fail-open. */
+    /** Behaviour when clarguard itself errors. Defaults to fail-open. */
     readonly failMode: FailMode;
     readonly budget: {
         readonly windowMs: number;
@@ -98,6 +98,6 @@ export interface ClawGuardConfig {
         readonly timeoutMs: number;
     };
 }
-export declare const DEFAULT_CONFIG: ClawGuardConfig;
-export declare function normalizeConfig(raw: unknown): ClawGuardConfig;
+export declare const DEFAULT_CONFIG: ClarGuardConfig;
+export declare function normalizeConfig(raw: unknown): ClarGuardConfig;
 //# sourceMappingURL=config.d.ts.map

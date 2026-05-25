@@ -1,6 +1,6 @@
 # Security Policy
 
-clawguard is a governance and data-loss-prevention tool: people run it to
+clarguard is a governance and data-loss-prevention tool: people run it to
 *enforce* spend limits and to *catch* secrets leaving their agents. A
 vulnerability here can let cost or sensitive data slip through silently, so
 we take reports seriously.
@@ -40,7 +40,7 @@ release notes unless you prefer to stay anonymous.
 
 ## Supply-chain assurances
 
-- **Zero runtime dependencies.** clawguard ships no production `node_modules`,
+- **Zero runtime dependencies.** clarguard ships no production `node_modules`,
   so its production attack surface is its own source.
 - **Build provenance.** Releases are published from CI with
   [npm provenance](https://docs.npmjs.com/generating-provenance-statements),

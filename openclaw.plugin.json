@@ -1,7 +1,7 @@
 {
   "$schema": "https://openclaw.ai/schemas/plugin.json",
-  "id": "claw-sentinel",
-  "name": "claw-sentinel",
+  "id": "clawguard",
+  "name": "clawguard",
   "version": "0.1.1",
   "description": "Budget enforcement, model downgrade, and DLP/audit for OpenClaw LLM calls.",
   "entry": "./dist/index.js",
@@ -205,7 +205,7 @@
           "enabled": { "type": "boolean", "default": true },
           "path": {
             "type": "string",
-            "description": "JSONL audit log path. Defaults to ~/.clawguard/audit.jsonl."
+            "description": "JSONL audit log path. Defaults to ~/.clarguard/audit.jsonl."
           }
         }
       }

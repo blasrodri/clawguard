@@ -1,5 +1,5 @@
 /**
- * `clawguard setup` — one-shot post-install fixer.
+ * `clarguard setup` — one-shot post-install fixer.
  *
  * Fixes the device scope catch-22: the CLI device ships with only
  * `operator.read`. Without `operator.write`, every `openclaw agent` call
@@ -7,7 +7,7 @@
  * We patch paired.json directly (the gateway is local, so the file is
  * authoritative) and restart the gateway.
  *
- * Note on hook coverage: clawguard hooks (budget, downgrade, DLP) fire only
+ * Note on hook coverage: clarguard hooks (budget, downgrade, DLP) fire only
  * when the OpenClaw gateway makes direct Anthropic API calls (the `anthropic`
  * agentRuntime). If your gateway is configured to use `claude-cli` as the
  * agentRuntime — which is the default when Claude Code is installed — only

@@ -1,8 +1,8 @@
 /**
- * clawguard — OpenClaw governance plugin entry point.
+ * clarguard — OpenClaw governance plugin entry point.
  *
  * Wires OpenClaw lifecycle hooks onto the pure `Governor` engine. Every
- * hook body is wrapped so a bug or a disk error inside clawguard can never
+ * hook body is wrapped so a bug or a disk error inside clarguard can never
  * crash the host turn: by default it fails *open* (the call proceeds);
  * set `failMode: "closed"` to fail safe (block) instead. Keep this layer
  * thin — all real decisions live in `core/`, which is exported below so
@@ -12,7 +12,7 @@
 // @ts-ignore — openclaw/plugin-sdk/plugin-entry is provided by the host runtime
 import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
 
-import { normalizeConfig, type ClawGuardConfig } from "./config.js";
+import { normalizeConfig, type ClarGuardConfig } from "./config.js";
 import { Governor, type Logger } from "./core/governor.js";
 import { guarded } from "./core/guard.js";
 import { SessionWatcher } from "./core/session-watcher.js";
@@ -28,7 +28,7 @@ import {
 } from "./openclaw.js";
 
 export default definePluginEntry({
-  id: "claw-sentinel",
+  id: "clawguard",
   register(api: PluginApi) {
   const config = normalizeConfig(api.pluginConfig);
   const logger = makeLogger(api);
@@ -94,7 +94,7 @@ export default definePluginEntry({
   // Disabled automatically if llm_output fires — that's the anthropic runtime.
   const watcher = new SessionWatcher({
     onUsage: (u) => { if (!llmOutputFired) governor.onUsage(u); },
-    onError: (err) => logger.warn(`clawguard: session-watcher error — ${String(err)}`),
+    onError: (err) => logger.warn(`clarguard: session-watcher error — ${String(err)}`),
   });
   watcher.start();
 
@@ -102,7 +102,7 @@ export default definePluginEntry({
   process.once("beforeExit", () => { governor.flush(); watcher.stop(); });
 
   logger.info(
-    `clawguard active — mode=${config.mode} fail=${config.failMode}` +
+    `clarguard active — mode=${config.mode} fail=${config.failMode}` +
       `${config.downgrade.to ? ` downgrade=${config.downgrade.to}` : ""}` +
       `${config.budget.maxUsd ? ` maxUsd=${config.budget.maxUsd}/win` : ""}` +
       `${config.budget.maxTokens ? ` maxTokens=${config.budget.maxTokens}/win` : ""}` +
@@ -112,10 +112,10 @@ export default definePluginEntry({
 });
 
 /** Run a hook body, returning `onError` (never throwing) if it fails. */
-function makeGuard(config: ClawGuardConfig, logger: Logger) {
+function makeGuard(config: ClarGuardConfig, logger: Logger) {
   return function guard<T>(hook: string, onError: T, body: () => T): T {
     return guarded(body, onError, (err) =>
-      logger.warn(`clawguard: ${hook} errored, failing ${config.failMode} — ${String(err)}`),
+      logger.warn(`clarguard: ${hook} errored, failing ${config.failMode} — ${String(err)}`),
     );
   };
 }
@@ -130,7 +130,7 @@ function makeLogger(api: PluginApi): Logger {
 
 export { Governor } from "./core/governor.js";
 export { normalizeConfig, DEFAULT_CONFIG } from "./config.js";
-export type { ClawGuardConfig } from "./config.js";
+export type { ClarGuardConfig } from "./config.js";
 export * as pricing from "./core/pricing.js";
 export * as downgrade from "./core/downgrade.js";
 export * as dlp from "./core/dlp.js";

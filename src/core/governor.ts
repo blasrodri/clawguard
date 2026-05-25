@@ -14,7 +14,7 @@
 
 import { existsSync } from "node:fs";
 
-import type { ClawGuardConfig } from "../config.js";
+import type { ClarGuardConfig } from "../config.js";
 import { AnomalyDetector } from "./anomaly.js";
 import { AuditLog, FileAuditSink, type AuditSink } from "./audit.js";
 import { BudgetWindow, type Clock, type BudgetSnapshot } from "./budget.js";
@@ -121,7 +121,7 @@ export class Governor {
   private killSwitchAlerted = false;
 
   constructor(
-    private readonly config: ClawGuardConfig,
+    private readonly config: ClarGuardConfig,
     deps: GovernorDeps = {},
   ) {
     this.now = deps.clock ?? Date.now;
@@ -220,7 +220,7 @@ export class Governor {
       from: input.model,
       to: decision.replacement,
     });
-    this.logger.info(`clawguard: downgraded ${input.model ?? "?"} -> ${decision.replacement}`);
+    this.logger.info(`clarguard: downgraded ${input.model ?? "?"} -> ${decision.replacement}`);
     return { modelOverride: decision.replacement };
   }
 
@@ -239,7 +239,7 @@ export class Governor {
     }
     const budget = formatBudgetForLog(this.budget.snapshot(), this.config.budget);
     this.logger.info(
-      `clawguard: ${finalModel ?? "?"} est $${est.toFixed(4)} (${tokens} input tok)` +
+      `clarguard: ${finalModel ?? "?"} est $${est.toFixed(4)} (${tokens} input tok)` +
         (budget ? ` · ${budget}` : ""),
     );
   }
@@ -250,7 +250,7 @@ export class Governor {
     }
     const budget = formatBudgetForLog(this.budget.snapshot(), this.config.budget);
     this.logger.info(
-      `clawguard: ${model ?? "?"} $${cost.toFixed(4)}` + (budget ? ` · ${budget}` : ""),
+      `clarguard: ${model ?? "?"} $${cost.toFixed(4)}` + (budget ? ` · ${budget}` : ""),
     );
   }
 
@@ -264,7 +264,7 @@ export class Governor {
     if (stop) {
       if (this.config.mode === "enforce") {
         this.audit.record(stop.type, { reason: stop.reason });
-        this.logger.warn(`clawguard: blocking run — ${stop.reason}`);
+        this.logger.warn(`clarguard: blocking run — ${stop.reason}`);
         if (stop.type === "kill_switch_engaged" && !this.killSwitchAlerted) {
           this.killSwitchAlerted = true;
           this.sendNotification("kill_switch", { reason: stop.reason });
@@ -381,7 +381,7 @@ export class Governor {
           observedRatio: detection.observedRatio,
         });
         this.logger.warn(
-          `clawguard: cost anomaly — $${cost.toFixed(4)} is ${detection.observedRatio.toFixed(1)}× the median for ${input.model ?? "?"}`,
+          `clarguard: cost anomaly — $${cost.toFixed(4)} is ${detection.observedRatio.toFixed(1)}× the median for ${input.model ?? "?"}`,
         );
         this.sendNotification("cost_anomaly", {
           provider: input.provider,
@@ -432,7 +432,7 @@ export class Governor {
     const enforceBlock = wantsBlock && this.config.mode === "enforce";
     this.audit.record(enforceBlock ? "dlp_blocked" : "dlp_detected", { labels });
     if (enforceBlock) {
-      this.logger.warn(`clawguard: cancelled outbound message — DLP hit ${labels.join(",")}`);
+      this.logger.warn(`clarguard: cancelled outbound message — DLP hit ${labels.join(",")}`);
     }
     return { cancel: enforceBlock, labels };
   }
@@ -464,7 +464,7 @@ export class Governor {
 }
 
 function resolveStore(
-  config: ClawGuardConfig,
+  config: ClarGuardConfig,
   audit: AuditLog,
   logger: Logger,
 ): GovernanceStore {
@@ -478,14 +478,14 @@ function resolveStore(
         detail: event.detail,
       });
       logger.warn(
-        `clawguard: persistence ${event.reason}` +
+        `clarguard: persistence ${event.reason}` +
           (event.detail ? ` (${event.detail})` : ""),
       );
     },
   });
 }
 
-function resolveAuditSink(config: ClawGuardConfig, override: AuditSink | undefined): AuditSink | undefined {
+function resolveAuditSink(config: ClarGuardConfig, override: AuditSink | undefined): AuditSink | undefined {
   if (override) {
     return override;
   }
@@ -499,11 +499,11 @@ function resolveAuditSink(config: ClawGuardConfig, override: AuditSink | undefin
 
 function defaultPath(file: string): string {
   const home = process.env.HOME ?? process.env.USERPROFILE ?? ".";
-  return `${home}/.clawguard/${file}`;
+  return `${home}/.clarguard/${file}`;
 }
 
 function buildNotifier(
-  config: ClawGuardConfig,
+  config: ClarGuardConfig,
   getLogger: () => Logger,
   getAudit: () => AuditLog,
 ): Notifier {
@@ -515,14 +515,14 @@ function buildNotifier(
     url,
     timeoutMs: config.notifications.timeoutMs,
     onError: (event, err) => {
-      getLogger().warn(`clawguard: notification ${event.type} failed — ${String(err)}`);
+      getLogger().warn(`clarguard: notification ${event.type} failed — ${String(err)}`);
       getAudit().record("notification_failed", { type: event.type, error: String(err) });
     },
   });
 }
 
 function compileCustomPatterns(
-  raw: ClawGuardConfig["dlp"]["customPatterns"],
+  raw: ClarGuardConfig["dlp"]["customPatterns"],
   audit: AuditLog,
   logger: Logger,
 ): CustomPattern[] {
@@ -533,13 +533,13 @@ function compileCustomPatterns(
       out.push(p.action !== undefined ? { name: p.name, regex, action: p.action } : { name: p.name, regex });
     } catch (err) {
       audit.record("dlp_pattern_invalid", { name: p.name, reason: String(err) });
-      logger.warn(`clawguard: skipping invalid DLP pattern "${p.name}": ${String(err)}`);
+      logger.warn(`clarguard: skipping invalid DLP pattern "${p.name}": ${String(err)}`);
     }
   }
   return out;
 }
 
-function formatBudgetForLog(snap: BudgetSnapshot, cfg: ClawGuardConfig["budget"]): string {
+function formatBudgetForLog(snap: BudgetSnapshot, cfg: ClarGuardConfig["budget"]): string {
   if (cfg.maxUsd && cfg.maxUsd > 0) {
     const pct = Math.min(100, Math.round((snap.usdUsed / cfg.maxUsd) * 100));
     return `window $${snap.usdUsed.toFixed(2)} / $${cfg.maxUsd.toFixed(2)} (${pct}%)`;

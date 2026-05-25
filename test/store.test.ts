@@ -16,7 +16,7 @@ describe("MemoryStore", () => {
 describe("FileStore", () => {
   let dir: string;
   beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), "clawguard-"));
+    dir = mkdtempSync(join(tmpdir(), "clarguard-"));
   });
   afterEach(() => {
     rmSync(dir, { recursive: true, force: true });
@@ -77,7 +77,7 @@ describe("FileStore", () => {
 describe("FileStore lock", () => {
   let dir: string;
   beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), "clawguard-lock-"));
+    dir = mkdtempSync(join(tmpdir(), "clarguard-lock-"));
   });
   afterEach(() => {
     rmSync(dir, { recursive: true, force: true });

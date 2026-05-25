@@ -1,6 +1,6 @@
 name: publish
 
-# Publishes clawguard to npm with build provenance (a signed, verifiable
+# Publishes clarguard to npm with build provenance (a signed, verifiable
 # link from the published tarball back to this source + workflow). Trigger
 # by pushing a tag like `v0.1.0`. Requires the NPM_TOKEN secret.
 

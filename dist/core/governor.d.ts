@@ -11,7 +11,7 @@
  * usage once the response arrives. Downgrade savings are attributed by
  * matching each resolve-time decision (FIFO) to its later usage event.
  */
-import type { ClawGuardConfig } from "../config.js";
+import type { ClarGuardConfig } from "../config.js";
 import { type AuditSink } from "./audit.js";
 import { BudgetWindow, type Clock } from "./budget.js";
 import { type Notifier } from "./notifier.js";
@@ -92,7 +92,7 @@ export declare class Governor {
     private lastWindowStart;
     /** Last observed kill-switch state, to fire only on false→true transitions. */
     private killSwitchAlerted;
-    constructor(config: ClawGuardConfig, deps?: GovernorDeps);
+    constructor(config: ClarGuardConfig, deps?: GovernorDeps);
     private sendNotification;
     private checkBudgetThresholds;
     /** `before_model_resolve`: rewrite to a cheaper model when policy says so. */

@@ -1,6 +1,6 @@
 /**
  * Budget forecasting. Pure projection from current burn rate — no state
- * of its own. Used by `clawguard report` to render "at $X/hour you'll
+ * of its own. Used by `clarguard report` to render "at $X/hour you'll
  * hit the cap in Yh" and by future alerting that wants a lead time
  * rather than a threshold crossing.
  *
