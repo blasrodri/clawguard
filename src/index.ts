@@ -28,7 +28,7 @@ import {
 } from "./openclaw.js";
 
 export default definePluginEntry({
-  id: "@blasrodri/clawguard",
+  id: "blasrodri-clawguard",
   register(api: PluginApi) {
   const config = normalizeConfig(api.pluginConfig);
   const logger = makeLogger(api);
