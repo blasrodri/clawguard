@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * `clarguard` CLI. Today the only subcommand is `report`; structured so
+ * `clawguard` CLI. Today the only subcommand is `report`; structured so
  * `status`, `reset-budget`, etc. can land next without re-shuffling.
  */
 
@@ -8,21 +8,21 @@ import { parseArgs } from "node:util";
 
 import { runReport } from "../report.js";
 
-const TOP_LEVEL_HELP = `Usage: clarguard <command> [options]
+const TOP_LEVEL_HELP = `Usage: clawguard <command> [options]
 
 Commands:
   report     Render a human-readable digest of the audit log.
 
-Run \`clarguard <command> --help\` for command-specific options.`;
+Run \`clawguard <command> --help\` for command-specific options.`;
 
-const REPORT_HELP = `Usage: clarguard report [options]
+const REPORT_HELP = `Usage: clawguard report [options]
 
 Render the audit log + budget state as markdown (or JSON).
 
 Options:
   --since <range>        Time range (e.g. 24h, 7d) or ISO timestamp. Default: 24h.
-  --audit-path <path>    Audit JSONL path. Default: ~/.clarguard/audit.jsonl.
-  --budget-path <path>   Budget state path. Default: ~/.clarguard/budget.json.
+  --audit-path <path>    Audit JSONL path. Default: ~/.clawguard/audit.jsonl.
+  --budget-path <path>   Budget state path. Default: ~/.clawguard/budget.json.
   --cap-usd <number>     USD budget cap (so the report can show a percentage).
   --cap-tokens <number>  Token budget cap (so the report can show a percentage).
   --json                 Emit JSON instead of markdown.

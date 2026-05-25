@@ -3,7 +3,7 @@
  * JSON POST). Fire-and-forget: the governor never awaits us on the hot
  * path; a slow webhook can't slow down the gateway. Failures are routed
  * back through `onError` so the governor can audit them — a misconfigured
- * Slack URL must be visible in `clarguard report`, not silent.
+ * Slack URL must be visible in `clawguard report`, not silent.
  *
  * Zero dependencies — uses Node 18+'s global `fetch` and `AbortController`.
  */

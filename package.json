@@ -1,6 +1,6 @@
 {
   "name": "@blasrodri/clawguard",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "In-process governance plugin for OpenClaw: per-window budget enforcement, policy-driven model downgrade, and DLP/audit for outbound LLM calls.",
   "type": "module",
   "license": "MIT OR Apache-2.0",
@@ -22,7 +22,7 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "clarguard": "./dist/bin/clarguard.js"
+    "clawguard": "./dist/bin/clawguard.js"
   },
   "repository": {
     "type": "git",

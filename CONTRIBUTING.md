@@ -1,6 +1,6 @@
-# Contributing to clarguard
+# Contributing to clawguard
 
-Thanks for helping. clarguard governs people's money and their data, so the
+Thanks for helping. clawguard governs people's money and their data, so the
 bar is correctness and clarity over cleverness.
 
 ## Setup

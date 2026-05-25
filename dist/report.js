@@ -1,5 +1,5 @@
 /**
- * `clarguard report` — turn the audit JSONL into a human-readable digest.
+ * `clawguard report` — turn the audit JSONL into a human-readable digest.
  *
  * The same data the audit log already records, rendered as the readout
  * you'd actually paste into a status channel or screenshot for a video.
@@ -123,7 +123,7 @@ function buildAggregate(events, state, since, now, options) {
 // --- rendering ---------------------------------------------------------------
 function renderMarkdown(a) {
     const lines = [];
-    lines.push(`# clarguard report`);
+    lines.push(`# clawguard report`);
     lines.push(`_generated ${a.generatedAt} · since ${a.since}_`);
     lines.push("");
     if (a.window) {
@@ -242,10 +242,10 @@ function resolveSince(since, now) {
     return new Date(now.getTime() - 24 * 60 * 60 * 1000);
 }
 function defaultAuditPath() {
-    return `${homeDir()}/.clarguard/audit.jsonl`;
+    return `${homeDir()}/.clawguard/audit.jsonl`;
 }
 function defaultBudgetPath() {
-    return `${homeDir()}/.clarguard/budget.json`;
+    return `${homeDir()}/.clawguard/budget.json`;
 }
 function homeDir() {
     return process.env.HOME ?? process.env.USERPROFILE ?? ".";

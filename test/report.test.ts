@@ -20,7 +20,7 @@ function ev(type: string, fields: Record<string, unknown> = {}, tsOffsetSec = -6
 describe("runReport", () => {
   it("renders an empty placeholder when there are no events", () => {
     const out = runReport({ now, loadEvents: () => [], loadBudget: () => undefined });
-    expect(out).toContain("# clarguard report");
+    expect(out).toContain("# clawguard report");
     expect(out).toContain("no audit events");
   });
 
@@ -87,7 +87,7 @@ describe("runReport", () => {
 describe("runReport file IO", () => {
   let dir: string;
   beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), "clarguard-report-"));
+    dir = mkdtempSync(join(tmpdir(), "clawguard-report-"));
   });
   afterEach(() => {
     rmSync(dir, { recursive: true, force: true });

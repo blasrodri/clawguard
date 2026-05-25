@@ -1,5 +1,5 @@
 /**
- * `clarguard report` — turn the audit JSONL into a human-readable digest.
+ * `clawguard report` — turn the audit JSONL into a human-readable digest.
  *
  * The same data the audit log already records, rendered as the readout
  * you'd actually paste into a status channel or screenshot for a video.

@@ -1,7 +1,7 @@
 /**
  * Plugin configuration: types, defaults, and a defensive normalizer that
  * turns the untyped object OpenClaw hands a plugin into a fully-populated,
- * validated `ClarGuardConfig`. The JSON Schema in `openclaw.plugin.json`
+ * validated `ClawGuardConfig`. The JSON Schema in `openclaw.plugin.json`
  * mirrors these fields for the gateway's own validation; this normalizer
  * is the runtime backstop and the security boundary for untrusted config.
  */

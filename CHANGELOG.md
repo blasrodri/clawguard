@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to clarguard are documented here. The format follows
+All notable changes to clawguard are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
@@ -8,7 +8,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- **Budget forecasting.** `clarguard report` now shows the current burn
+- **Budget forecasting.** `clawguard report` now shows the current burn
   rate and the projected time to cap ("at $1.20/hour you'll hit the cap
   in ~3h 14m"), or the projected end-of-window spend when the cap won't
   be hit. Pure projection — gated on a minimum elapsed time
@@ -45,14 +45,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `windowSize` calls. Per-model bucketing avoids the obvious false
   positives, a cold-start `minSamples` skip avoids the empty-baseline
   trap, and zero-cost calls are ignored. Emits a `cost_anomaly` audit
-  event and surfaces in `clarguard report`. Disabled by default.
-- **`clarguard report` CLI** — renders the audit JSONL + budget state as a
+  event and surfaces in `clawguard report`. Disabled by default.
+- **`clawguard report` CLI** — renders the audit JSONL + budget state as a
   human-readable markdown digest (or `--json` for machine consumers). Shows
   current spend vs cap, DLP hits by category, downgrade routes and savings,
   circuit-breaker / kill-switch / persistence health. Designed to be the
   artifact you actually screenshot or paste into a status channel.
 - A new audit event type `savings` (emitted on `llm_output` when a
-  downgrade is settled) so `clarguard report` can show real savings totals,
+  downgrade is settled) so `clawguard report` can show real savings totals,
   not just downgrade counts.
 
 ### Changed
@@ -79,7 +79,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Budget-aware downgrade** — `downgrade.whenBudgetRatioAbove` keeps the
   premium model until usage crosses a fraction of the budget, then downgrades.
 
-With these, clarguard now implements all three governance patterns from
+With these, clawguard now implements all three governance patterns from
 OpenClaw RFC #27442 (budgets, circuit breaker, kill switch).
 
 ## [0.1.0] - 2026-05-22

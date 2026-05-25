@@ -1,7 +1,7 @@
 /**
  * Plugin configuration: types, defaults, and a defensive normalizer that
  * turns the untyped object OpenClaw hands a plugin into a fully-populated,
- * validated `ClarGuardConfig`. The JSON Schema in `openclaw.plugin.json`
+ * validated `ClawGuardConfig`. The JSON Schema in `openclaw.plugin.json`
  * mirrors these fields for the gateway's own validation; this normalizer
  * is the runtime backstop and the security boundary for untrusted config.
  */
@@ -15,10 +15,10 @@ export type DlpAction = "log" | "block";
 /** On an internal error, `open` lets the call proceed; `closed` blocks it. */
 export type FailMode = "open" | "closed";
 
-export interface ClarGuardConfig {
+export interface ClawGuardConfig {
   /** `enforce` blocks/rewrites for real; `shadow` only records what it would do. */
   readonly mode: Mode;
-  /** Behaviour when clarguard itself errors. Defaults to fail-open. */
+  /** Behaviour when clawguard itself errors. Defaults to fail-open. */
   readonly failMode: FailMode;
   readonly budget: {
     readonly windowMs: number;
@@ -102,7 +102,7 @@ export interface ClarGuardConfig {
   };
 }
 
-export const DEFAULT_CONFIG: ClarGuardConfig = {
+export const DEFAULT_CONFIG: ClawGuardConfig = {
   mode: "enforce",
   failMode: "open",
   budget: {
@@ -138,7 +138,7 @@ export const DEFAULT_CONFIG: ClarGuardConfig = {
   },
 };
 
-export function normalizeConfig(raw: unknown): ClarGuardConfig {
+export function normalizeConfig(raw: unknown): ClawGuardConfig {
   const root = asRecord(raw);
   const budget = asRecord(root.budget);
   const downgrade = asRecord(root.downgrade);
@@ -299,7 +299,7 @@ function normalizeBuiltins(v: unknown): DlpLabel[] | "all" {
 
 function normalizeCustomPatterns(
   v: unknown,
-): ClarGuardConfig["dlp"]["customPatterns"] {
+): ClawGuardConfig["dlp"]["customPatterns"] {
   if (!Array.isArray(v)) {
     return [];
   }

@@ -1,16 +1,16 @@
-# ClarGuard
+# ClawGuard
 
 **Stop surprise LLM bills. Block secrets before they leave your machine.**
 
-ClarGuard is an [OpenClaw](https://openclaw.ai) plugin that puts a governance layer in front of every LLM call — enforcing budgets, auto-downgrading expensive models, and scanning messages for API keys, PII, and secrets before they reach the model.
+ClawGuard is an [OpenClaw](https://openclaw.ai) plugin that puts a governance layer in front of every LLM call — enforcing budgets, auto-downgrading expensive models, and scanning messages for API keys, PII, and secrets before they reach the model.
 
 ```
-clarguard active — mode=enforce downgrade=haiku maxUsd=5/win dlp=block
+clawguard active — mode=enforce downgrade=haiku maxUsd=5/win dlp=block
 ```
 
 ---
 
-## Why ClarGuard
+## Why ClawGuard
 
 - You're paying $40/month in Claude API costs and have no idea where it's going
 - A script or agent accidentally sends an API key or SSN to the model
@@ -99,12 +99,12 @@ Open the circuit after N consecutive provider failures. Blocks calls during the 
 Halt all LLM calls instantly — via config flag (restart needed) or a file on disk (no restart, toggle at runtime).
 
 ```bash
-touch /tmp/clarguard-halt    # stop all calls
-rm /tmp/clarguard-halt       # resume
+touch /tmp/clawguard-halt    # stop all calls
+rm /tmp/clawguard-halt       # resume
 ```
 
 ### Audit log
-Append-only JSONL at `~/.clarguard/audit.jsonl`. Every budget decision, DLP hit, downgrade, and breaker event is recorded. No raw prompt/response content — only labels, models, and counts.
+Append-only JSONL at `~/.clawguard/audit.jsonl`. Every budget decision, DLP hit, downgrade, and breaker event is recorded. No raw prompt/response content — only labels, models, and counts.
 
 ---
 
@@ -119,7 +119,7 @@ my key is sk-ant-api03-xxxxxxxx...
 With `onDetect: "block"` the message is cancelled before reaching the model. Check the audit log:
 
 ```bash
-grep dlp ~/.clarguard/audit.jsonl | tail -3
+grep dlp ~/.clawguard/audit.jsonl | tail -3
 # {"type":"dlp_blocked","labels":["api_key"],"direction":"inbound"}
 ```
 
@@ -128,13 +128,13 @@ grep dlp ~/.clarguard/audit.jsonl | tail -3
 ## Budget report
 
 ```bash
-clarguard report
-clarguard report --since 7d
-clarguard report --cap-usd 5 --json
+clawguard report
+clawguard report --since 7d
+clawguard report --cap-usd 5 --json
 ```
 
 ```
-# ClarGuard report
+# ClawGuard report
 _generated 2026-05-23T20:33:40Z · since 2026-05-22T20:33:40Z_
 
 ## Budget
@@ -150,7 +150,7 @@ $3.21 of $5.00 spent (64%) · 412,309 tokens
 
 ## Hook coverage
 
-ClarGuard works with both OpenClaw runtimes:
+ClawGuard works with both OpenClaw runtimes:
 
 | Feature | `anthropic` runtime | `claude-cli` runtime |
 |---|---|---|
@@ -166,7 +166,7 @@ ClarGuard works with both OpenClaw runtimes:
 
 ## Shadow mode
 
-Not ready to enforce? Start in shadow mode — ClarGuard records every decision it *would* make without blocking or rewriting anything.
+Not ready to enforce? Start in shadow mode — ClawGuard records every decision it *would* make without blocking or rewriting anything.
 
 ```json
 "mode": "shadow"
@@ -196,7 +196,7 @@ Switch to `"enforce"` when you're confident in your config.
   },
   "killSwitch": {
     "enabled": false,
-    "file": "/tmp/clarguard-halt"
+    "file": "/tmp/clawguard-halt"
   },
   "breaker": {
     "enabled": true,
@@ -222,7 +222,7 @@ Switch to `"enforce"` when you're confident in your config.
 
 **`mode`** — `enforce` applies decisions for real. `shadow` logs without acting.
 
-**`failMode`** — `open` lets calls through if ClarGuard itself errors. `closed` blocks on internal errors (fail-safe).
+**`failMode`** — `open` lets calls through if ClawGuard itself errors. `closed` blocks on internal errors (fail-safe).
 
 **`downgrade.to`** — `sonnet`, `haiku`, `gpt-4o`, or `gpt-3.5-turbo`. Models pricier than the target are rewritten; others are untouched.
 

@@ -1,6 +1,6 @@
 name: ci
 
-# CI for the standalone clarguard repository.
+# CI for the standalone clawguard repository.
 
 on:
   push:

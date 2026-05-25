@@ -133,7 +133,7 @@ export class Governor {
             from: input.model,
             to: decision.replacement,
         });
-        this.logger.info(`clarguard: downgraded ${input.model ?? "?"} -> ${decision.replacement}`);
+        this.logger.info(`clawguard: downgraded ${input.model ?? "?"} -> ${decision.replacement}`);
         return { modelOverride: decision.replacement };
     }
     logPreFlight(input, outcome) {
@@ -150,7 +150,7 @@ export class Governor {
             return; // unknown model rate — a "$0.0000 est" line is just noise
         }
         const budget = formatBudgetForLog(this.budget.snapshot(), this.config.budget);
-        this.logger.info(`clarguard: ${finalModel ?? "?"} est $${est.toFixed(4)} (${tokens} input tok)` +
+        this.logger.info(`clawguard: ${finalModel ?? "?"} est $${est.toFixed(4)} (${tokens} input tok)` +
             (budget ? ` · ${budget}` : ""));
     }
     logActualCall(model, cost) {
@@ -158,7 +158,7 @@ export class Governor {
             return;
         }
         const budget = formatBudgetForLog(this.budget.snapshot(), this.config.budget);
-        this.logger.info(`clarguard: ${model ?? "?"} $${cost.toFixed(4)}` + (budget ? ` · ${budget}` : ""));
+        this.logger.info(`clawguard: ${model ?? "?"} $${cost.toFixed(4)}` + (budget ? ` · ${budget}` : ""));
     }
     /**
      * `before_agent_run`: refuse to start a turn if the kill switch is
@@ -170,7 +170,7 @@ export class Governor {
         if (stop) {
             if (this.config.mode === "enforce") {
                 this.audit.record(stop.type, { reason: stop.reason });
-                this.logger.warn(`clarguard: blocking run — ${stop.reason}`);
+                this.logger.warn(`clawguard: blocking run — ${stop.reason}`);
                 if (stop.type === "kill_switch_engaged" && !this.killSwitchAlerted) {
                     this.killSwitchAlerted = true;
                     this.sendNotification("kill_switch", { reason: stop.reason });
@@ -268,7 +268,7 @@ export class Governor {
                     medianUsd: detection.median,
                     observedRatio: detection.observedRatio,
                 });
-                this.logger.warn(`clarguard: cost anomaly — $${cost.toFixed(4)} is ${detection.observedRatio.toFixed(1)}× the median for ${input.model ?? "?"}`);
+                this.logger.warn(`clawguard: cost anomaly — $${cost.toFixed(4)} is ${detection.observedRatio.toFixed(1)}× the median for ${input.model ?? "?"}`);
                 this.sendNotification("cost_anomaly", {
                     provider: input.provider,
                     model: input.model,
@@ -314,7 +314,7 @@ export class Governor {
         const enforceBlock = wantsBlock && this.config.mode === "enforce";
         this.audit.record(enforceBlock ? "dlp_blocked" : "dlp_detected", { labels });
         if (enforceBlock) {
-            this.logger.warn(`clarguard: cancelled outbound message — DLP hit ${labels.join(",")}`);
+            this.logger.warn(`clawguard: cancelled outbound message — DLP hit ${labels.join(",")}`);
         }
         return { cancel: enforceBlock, labels };
     }
@@ -351,7 +351,7 @@ function resolveStore(config, audit, logger) {
                 reason: event.reason,
                 detail: event.detail,
             });
-            logger.warn(`clarguard: persistence ${event.reason}` +
+            logger.warn(`clawguard: persistence ${event.reason}` +
                 (event.detail ? ` (${event.detail})` : ""));
         },
     });
@@ -369,7 +369,7 @@ function resolveAuditSink(config, override) {
 }
 function defaultPath(file) {
     const home = process.env.HOME ?? process.env.USERPROFILE ?? ".";
-    return `${home}/.clarguard/${file}`;
+    return `${home}/.clawguard/${file}`;
 }
 function buildNotifier(config, getLogger, getAudit) {
     const url = config.notifications.webhookUrl;
@@ -380,7 +380,7 @@ function buildNotifier(config, getLogger, getAudit) {
         url,
         timeoutMs: config.notifications.timeoutMs,
         onError: (event, err) => {
-            getLogger().warn(`clarguard: notification ${event.type} failed — ${String(err)}`);
+            getLogger().warn(`clawguard: notification ${event.type} failed — ${String(err)}`);
             getAudit().record("notification_failed", { type: event.type, error: String(err) });
         },
     });
@@ -394,7 +394,7 @@ function compileCustomPatterns(raw, audit, logger) {
         }
         catch (err) {
             audit.record("dlp_pattern_invalid", { name: p.name, reason: String(err) });
-            logger.warn(`clarguard: skipping invalid DLP pattern "${p.name}": ${String(err)}`);
+            logger.warn(`clawguard: skipping invalid DLP pattern "${p.name}": ${String(err)}`);
         }
     }
     return out;

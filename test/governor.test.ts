@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_CONFIG, type ClarGuardConfig } from "../src/config.js";
+import { DEFAULT_CONFIG, type ClawGuardConfig } from "../src/config.js";
 import { Governor } from "../src/core/governor.js";
 import { MemoryAuditSink } from "../src/core/audit.js";
 import { MemoryStore } from "../src/core/store.js";
 
-function makeConfig(over: Partial<ClarGuardConfig> = {}): ClarGuardConfig {
+function makeConfig(over: Partial<ClawGuardConfig> = {}): ClawGuardConfig {
   return {
     ...DEFAULT_CONFIG,
     ...over,
@@ -15,7 +15,7 @@ function makeConfig(over: Partial<ClarGuardConfig> = {}): ClarGuardConfig {
   };
 }
 
-function setup(config: ClarGuardConfig, fileExists?: (p: string) => boolean) {
+function setup(config: ClawGuardConfig, fileExists?: (p: string) => boolean) {
   const sink = new MemoryAuditSink();
   let t = 0;
   const governor = new Governor(config, {
@@ -205,7 +205,7 @@ describe("Governor budget-aware downgrade", () => {
 });
 
 describe("Governor per-call log line", () => {
-  function setupWithLogs(config: ClarGuardConfig) {
+  function setupWithLogs(config: ClawGuardConfig) {
     const logs: string[] = [];
     const logger = { info: (m: string) => logs.push(m), warn: () => {} };
     const governor = new Governor(config, {
@@ -240,7 +240,7 @@ describe("Governor per-call log line", () => {
       outputTokens: 0,
     });
     // 100k opus input = $1.50 of a $10 cap → 15%
-    const line = logs.find((l) => l.startsWith("clarguard: claude-opus $"));
+    const line = logs.find((l) => l.startsWith("clawguard: claude-opus $"));
     expect(line).toBeDefined();
     expect(line).toContain("$1.5000");
     expect(line).toContain("(15%)");

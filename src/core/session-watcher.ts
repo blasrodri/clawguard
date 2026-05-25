@@ -1,6 +1,6 @@
 /**
  * Tails Claude Code session JSONL files and extracts token usage from
- * assistant messages. This is how clarguard gets token accounting when
+ * assistant messages. This is how clawguard gets token accounting when
  * OpenClaw uses the claude-cli runtime — the gateway doesn't expose usage
  * via plugin hooks in that mode, but Claude Code writes full usage data to
  * ~/.claude/projects/<workspace>/<sessionId>.jsonl after every turn.

@@ -240,7 +240,7 @@ export class FileStore implements GovernanceStore {
         }
       }
     }
-    throw new Error(`clarguard: could not acquire persistence lock at ${lockPath}`);
+    throw new Error(`clawguard: could not acquire persistence lock at ${lockPath}`);
   }
 
   private fsyncDirectory(): void {
