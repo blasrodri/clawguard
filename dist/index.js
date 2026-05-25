@@ -16,7 +16,7 @@ import { guarded } from "./core/guard.js";
 import { SessionWatcher } from "./core/session-watcher.js";
 import { HOOKS, readCallOk, readMessageText, readModelCtx, readPromptEstimate, readPromptText, readUsageCtx, } from "./openclaw.js";
 export default definePluginEntry({
-    id: "clawguard",
+    id: "@blasrodri/clawguard",
     register(api) {
         const config = normalizeConfig(api.pluginConfig);
         const logger = makeLogger(api);

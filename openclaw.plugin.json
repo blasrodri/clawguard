@@ -1,7 +1,7 @@
 {
   "$schema": "https://openclaw.ai/schemas/plugin.json",
-  "id": "clawguard",
-  "name": "clawguard",
+  "id": "@blasrodri/clawguard",
+  "name": "@blasrodri/clawguard",
   "version": "0.1.1",
   "description": "Budget enforcement, model downgrade, and DLP/audit for OpenClaw LLM calls.",
   "entry": "./dist/index.js",
