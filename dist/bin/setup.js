@@ -14,7 +14,7 @@
  * the `before_agent_run` and `message_sending` hooks fire. Token accounting
  * and model downgrade require the `anthropic` runtime with a direct API key.
  */
-import { execSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -31,7 +31,7 @@ export function runSetup(opts) {
     if (result.restartNeeded && !opts.dryRun) {
         process.stdout.write(`\nRestarting gateway to apply changes…\n`);
         try {
-            execSync("openclaw gateway restart", { stdio: "inherit" });
+            spawnSync("openclaw", ["gateway", "restart"], { stdio: "inherit" });
         }
         catch {
             process.stdout.write("  (restart failed — run: openclaw gateway restart)\n");
