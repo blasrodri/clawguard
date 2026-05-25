@@ -11,6 +11,7 @@
   "engines": {
     "openclaw": ">=1.0.0"
   },
+  "pluginApi": "1.0",
   "registeredHooks": [
     "before_model_resolve",
     "before_agent_run",
