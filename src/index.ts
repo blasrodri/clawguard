@@ -9,6 +9,9 @@
  * the package doubles as a library.
  */
 
+// @ts-ignore — openclaw/plugin-sdk/plugin-entry is provided by the host runtime
+import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
+
 import { normalizeConfig, type ClawGuardConfig } from "./config.js";
 import { Governor, type Logger } from "./core/governor.js";
 import { guarded } from "./core/guard.js";
@@ -24,7 +27,9 @@ import {
   type PluginApi,
 } from "./openclaw.js";
 
-export default function activate(api: PluginApi): void {
+export default definePluginEntry({
+  id: "clawguard",
+  register(api: PluginApi) {
   const config = normalizeConfig(api.config);
   const logger = makeLogger(api);
   const governor = new Governor(config, { logger });
@@ -103,7 +108,8 @@ export default function activate(api: PluginApi): void {
       `${config.budget.maxTokens ? ` maxTokens=${config.budget.maxTokens}/win` : ""}` +
       ` dlp=${config.dlp.enabled ? config.dlp.onDetect : "off"}`,
   );
-}
+  },
+});
 
 /** Run a hook body, returning `onError` (never throwing) if it fails. */
 function makeGuard(config: ClawGuardConfig, logger: Logger) {

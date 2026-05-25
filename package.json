@@ -46,6 +46,10 @@
   "engines": {
     "node": ">=20"
   },
+  "openclaw": {
+    "extensions": ["./dist/index.js"],
+    "compat": { "minGatewayVersion": "2026.3.24-beta.2" }
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",

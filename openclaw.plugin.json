@@ -1,13 +1,17 @@
 {
   "$schema": "https://openclaw.ai/schemas/plugin.json",
+  "id": "clawguard",
   "name": "clawguard",
   "version": "0.1.0",
   "description": "Budget enforcement, model downgrade, and DLP/audit for OpenClaw LLM calls.",
-  "main": "./dist/index.js",
+  "entry": "./dist/index.js",
+  "hooks": {
+    "allowConversationAccess": true
+  },
   "engines": {
     "openclaw": ">=1.0.0"
   },
-  "hooks": [
+  "registeredHooks": [
     "before_model_resolve",
     "before_agent_run",
     "llm_output",
